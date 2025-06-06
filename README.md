@@ -1,4 +1,5 @@
 # ARCNET
+Autocatalytic, Relativistic, Curvature, **Net**work
 
 ## Autocatalytic Abstraction Networks (AANs)
 
