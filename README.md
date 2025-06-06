@@ -63,3 +63,4 @@ $$
 where $g_{ij}(x)$ is learned via a neural net based on reqard curvature and transition predictability.
 
 Instead of choosing a discrete action, the agent holds a superposition of policy branches weighted by complex-valued amplitudes, which collapse during high-reward observations. It’s not quantum computing only inspired.
+
