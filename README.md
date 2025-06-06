@@ -34,6 +34,9 @@ This is an explicit example of an abstraction network with *partial* autocatalyt
 4. Without heavy external steering
 
 We're going to see if we can improve the process of higher-order abstractions and maintaining accuracy by incorporating manifold folding of abstractions in a 3d space. 
+
+![til](examples/lineage_evolution.gif)
+
 ***
 ## What if we add QISRL (Learning in Curved Decision Spaces)
 
