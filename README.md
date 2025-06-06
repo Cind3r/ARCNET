@@ -51,7 +51,7 @@ $$
 Q(s,a) = r(s,a) + \gamma(s) \max\limits_{a'} Q(s',a')
 $$
 
-where $ \gamma(s) = e^{-\lambda H(s)}$ and $H(s)$ is the entropy or information uncertainty at state $s$.
+where $\gamma(s) = e^{-\lambda H(s)}$ and $H(s)$ is the entropy or information uncertainty at state $s$.
 
 Inspired by general relativity, we define a metric tensor over the state space that warps distances:
 
