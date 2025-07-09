@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from ARCNET.models.arcnet import ConceptModule
+from models.arcnet import ConceptModule
 
 # This module provides functions to save and load lineage snapshots,
 # and create animations of lineage evolution in 3D. It generally handles

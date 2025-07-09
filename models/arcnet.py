@@ -4,10 +4,10 @@ import random
 from sklearn.decomposition import PCA
 import math
 import numpy as np
-from ARCNET.evolution.fitness import compute_manifold_novelty
-from ARCNET.core.registry import ModuleComponent
-from ARCNET.core.QModule import CompressedQModule
-from ARCNET.core.registry import ComponentRegistry
+from evolution.rewards import compute_manifold_novelty
+from core.registry import ModuleComponent
+from core.QModule import CompressedQModule
+from core.registry import ComponentRegistry
 
 class ConceptModule(nn.Module):
     

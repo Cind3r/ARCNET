@@ -3,8 +3,7 @@ import torch.nn.functional as F
 import random
 import numpy as np
 from core.message import select_neighbors
-from fitness import (
-                    compute_fitness_adaptive_complexity, 
+from evolution.fitness import (
                     compute_fitness_adaptive_complexity_enhanced,
                     compute_fitness_natural_discovery
                 )
@@ -207,7 +206,7 @@ def compute_reward_adaptive_aan(mod, X, y, population, step=0, max_steps=50):
     """AAN reward that adapts to dataset complexity while preserving auto-generative nature"""
     
     # 1. ADAPTIVE FITNESS (core component)
-    fitness = compute_fitness_adaptive_complexity(mod, X, y, step, max_steps)
+    fitness = compute_fitness_adaptive_complexity_enhanced(mod, X, y, step, max_steps)
     
     # 2. MANIFOLD NOVELTY (preserve spatial exploration)
     novelty_sample_size = min(15, len(population))
