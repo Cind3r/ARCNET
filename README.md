@@ -514,9 +514,7 @@ Where:
 
 With the objective of maximizing: 
 
-$$
-\mathcal{L} = \mathbb{E}_{t,i}\left[ R(m_i^{(t)}) \right] - \lambda A_{\text{sys}}^{(t)}
-$$
+$$\mathcal{L} = \mathbb{E}_{t,i}\left[ R(m_i^{(t)}) \right] - \lambda A_{\text{sys}}^{(t)}$$
 
 Where:  
 - $\mathcal{L}$: Objective function  
