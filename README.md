@@ -70,4 +70,4 @@ Instead of choosing a discrete action, the agent holds a superposition of policy
 
 ***
 ## Architecture Workflow Diagram
-<img src=examples/mermaid-diagram-VERT.svg height=3000/>
+<img src=examples/mermaid-diagram-VERT.svg />
