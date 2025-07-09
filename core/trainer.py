@@ -1,5 +1,7 @@
 import torch
 import os
+import copy
+from copy import deepcopy
 from tqdm.notebook import tqdm
 from datetime import datetime
 import numpy as np
@@ -28,6 +30,16 @@ from data.loader import (
     export_best_models
 )
 
+# NEW IMPORTS FOR ASSEMBLY AWARE MUTATION TESTING
+from evolution.mutation import (
+    assembly_aware_mutation_with_tracking
+)
+from core.message import (
+    enhanced_message_passing_with_assembly_tracking
+)
+from core.registry import (
+    AssemblyTrackingRegistry
+)
 
 # This function can definitely be simplified, for now it is comprehensive and includes all the features we want to test.
 def Trainer(
@@ -91,6 +103,7 @@ def Trainer(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename_base = f"{experiment_name}_phase_{timestamp}"
     population = []
+    assembly_registry = AssemblyTrackingRegistry()
     
     if track_best_models:
         best_models_history = []
@@ -111,14 +124,15 @@ def Trainer(
     else:
         print("STARTING FRESH EVOLUTION")
         for _ in range(initial_population):
-            module = ConceptModule(input_dim, hidden_dim, output_dim, q_learning_method=q_learning_method)
+            m = ConceptModule(input_dim, hidden_dim, output_dim, q_learning_method=q_learning_method)
             # Initialize with consistent state
-            module.get_standardized_state(population)  # Initialize state representation
-            population.append(module)
+            m.get_standardized_state(population)  # Initialize state representation
+            population.append(m)
+            assembly_registry.register_module_initialization(m)
 
     lineage_registry = {m.id: m for m in population}
     
-    # Initialize reward tracking
+    # Initialize reward tracking 
     for m in population:
         m.reward_history = []
     
@@ -135,41 +149,98 @@ def Trainer(
         print(f"Using original data types.")
         pass
         
+
     for step in range(steps):
         # ================ 1. LOSS/FITNESS EVALUATION ================            
+        assembly_registry.step_forward()  # Update assembly step
+        
         for m in population:
             
+            # grab current fitness if it exists, otherwise initialize to 0.0 for delta
+            pre_fitness = m.fitness if hasattr(m, 'fitness') else 0.0
+
             if training_method == 'fitness':
                 if epochs > 1:
-                    for epoch in range(epochs):
+                    for _ in range(epochs):
                         m.train(X_train, y_train)
-                        
                 m.cpu()
                 m.eval()
                 m.fitness = compute_fitness_adaptive_complexity_enhanced(m, X_train, y_train)
 
             elif training_method == 'loss':
-                
                 m.train()  # set to training mode
                 optimizer = torch.optim.Adam(m.parameters(), lr=1e-3)
                 for _ in range(epochs):  # e.g., local_steps=3
                     optimizer.zero_grad()
-                    output = m(X_train)
                     loss = compute_loss(m, X_train, y_train, population=population)
+                    if not isinstance(loss, torch.Tensor): # Ensure loss is a tensor with gradients
+                        print(f"Warning: compute_loss returned {type(loss)}, converting to tensor")
+                        loss = torch.tensor(loss, dtype=torch.float32, requires_grad=True)
+                    elif not loss.requires_grad:
+                        print(f"Warning: loss tensor doesn't require gradients")
+                        loss.requires_grad_(True)
                     loss.backward()
                     optimizer.step()
                 m.cpu()
-                m.eval()  # set back to eval mode
+                m.eval()
                 
-
-            # Likely computational overhead, kept incase something bugs out
-            #if m.id not in lineage_registry:
-            #    lineage_registry[m.id] = m
-
+                # Compute fitness from the final loss
+                with torch.no_grad():
+                    final_loss = compute_loss(m, X_train, y_train, population=population)
+                    if isinstance(final_loss, torch.Tensor):
+                        final_loss = final_loss.item()
+                    
+                    # Convert loss to fitness (lower loss = higher fitness)
+                    # Option 1: Simple inverse relationship
+                    m.fitness = 1.0 / (1.0 + final_loss)
+                    
+                    # Option 2: Alternative - exponential decay (uncomment if preferred) --> possibly better for population fitness emergence
+                    # m.fitness = np.exp(-final_loss)
+                    
+                    # Option 3: Alternative - direct accuracy-based fitness (uncomment if preferred) --> HEAVY COMPUTATIONAL OVERHEAD
+                    # try:
+                    #     with torch.no_grad():
+                    #         outputs = m(X_train)
+                    #         predictions = outputs.argmax(dim=1)
+                    #         if y_train.ndim == 2 and y_train.shape[1] > 1:
+                    #             y_train_labels = y_train.argmax(dim=1)
+                    #         else:
+                    #             y_train_labels = y_train
+                    #         accuracy = (predictions == y_train_labels).float().mean().item()
+                    #         m.fitness = accuracy
+                    # except Exception as e:
+                    #     print(f"Error computing accuracy-based fitness: {e}")
+                    #     m.fitness = 1.0 / (1.0 + final_loss)
+            fitness_delta = m.fitness - pre_fitness
+            if abs(fitness_delta) > 0.01:
+                fitness_event = {
+                    'module_id': m.id,
+                    'event_type': 'fitness_update',
+                    'step': step,
+                    'pre_fitness': pre_fitness,
+                    'post_fitness': m.fitness,
+                    'fitness_delta': fitness_delta
+                }
+                assembly_registry.global_assembly_events.append({
+                    'type': 'fitness_update',
+                    'step': step,
+                    'data': fitness_event
+                })
 
         # ================ 2. Q-LEARNING UPDATES FIRST ================
         # Update Q-functions immediately after fitness evaluation
         for m in population:
+            
+            q_update_info = {
+                'experiences_added': 0,
+                'q_value_changes': [],
+                'parent_modules': []
+            }
+
+            # Grab q-learning snapshot for assembly tracking
+            if hasattr(m, 'q_function') and m.q_function is not None:
+               q_event = assembly_registry.track_q_learning_update(m, q_update_info)
+
             if (m.q_learning_method == 'neural' and 
                 m.q_function is not None and 
                 m.last_state is not None and 
@@ -189,8 +260,42 @@ def Trainer(
                 total_reward = base_reward #+ manifold_bonus
                 next_state = [m.fitness, compute_manifold_novelty(m, list(lineage_registry.values()))]
                 
+                q_values_before = None
+                if hasattr(m.q_function, 'get_q_values'):
+                    q_values_before = deepcopy(m.q_function.get_q_values(m.last_state))  # Implement get_q_values as needed
+
                 # Update Q-function with fresh experience
                 m.update_q(total_reward, next_state)
+
+                # Store Q-values after update
+                q_values_after = None
+                if hasattr(m.q_function, 'get_q_values'):
+                    q_values_after = deepcopy(m.q_function.get_q_values(m.last_state))
+
+                q_value_changes = []
+                if q_values_before is not None and q_values_after is not None:
+                    for action in range(len(q_values_before)):
+                        if q_values_before[action] != q_values_after[action]:
+                            q_value_changes.append({
+                                'state': m.last_state,
+                                'action': action,
+                                'old_q': q_values_before[action],
+                                'new_q': q_values_after[action]
+                            })
+
+                # Track how many experiences were added (assume 1 per update)
+                experiences_added = 1 if hasattr(m.q_function, 'replay_buffer') else 0
+
+                # Optionally, track parent modules if inheriting experiences
+                parent_modules = getattr(m, 'q_inheritance_sources', [])
+
+                # Add Q-learning update info to the event
+                q_event['experiences_added'] = experiences_added
+                q_event['q_value_changes'] = q_value_changes
+                q_event['parent_modules'] = parent_modules
+
+                # Track q-learning update in the registry
+                assembly_registry.complete_q_learning_update(q_event, m)
 
                 # Track reward history
                 if not hasattr(m, 'reward_history'):
@@ -198,12 +303,12 @@ def Trainer(
                 m.reward_history.append(m.reward)
                 if len(m.reward_history) > 10:
                     m.reward_history.pop(0)
-              
             
         # ================ 3. MESSAGE PASSING  ================
         # Now do message passing with fresh Q-learning updates
         #if step % 2 == 0:
-        comprehensive_manifold_q_message_passing(population, step)
+        # im assuming that this updates assemby as we pass the registry in, could not, kinda tired
+        enhanced_message_passing_with_assembly_tracking(population, step, assembly_registry)
         #else:
         #    q_learning_reward_sharing(population)
 
@@ -344,8 +449,9 @@ def Trainer(
 
             # ================ 7. CATALYST-BASED MUTATION WITH Q-INHERITANCE ================
             
-            child = parent.mutate(current_step=step, catalysts=catalysts)
-            child.record_assembly_operation('mutation', [parent], catalysts)
+            child = assembly_aware_mutation_with_tracking(parent, catalysts, step, assembly_registry)
+            #if hasattr(child, 'record_assembly_operation'):
+            #    child.record_assembly_operation('mutation', [parent], catalysts)
             child.parent_id = parent.id
             
             # Manifold-aware position update
@@ -358,6 +464,8 @@ def Trainer(
             
             offspring.append(child)
             lineage_registry[child.id] = child
+
+            assembly_registry.register_module_initialization(child)
         
         # ================ INHERIT Q-EXPERIENCES FROM GLOBAL POOL ================
         if global_q_knowledge_pool and offspring:
@@ -379,6 +487,7 @@ def Trainer(
                     
                     if debug:
                         print(f"  Child {child.id} inherited {len(inherited_exp)} Q-experiences from global pool")
+
 
         # ================ 8. POPULATION UPDATE ================
         if enable_irxn:
@@ -449,4 +558,76 @@ def Trainer(
         print(f"Exported best models to {metadata['export_files']}")
         return population, lineage_registry, filename_base, export_files, metadata
     
-    return population, lineage_registry, filename_base, best_models_history, generation_stats
+    return population, lineage_registry, filename_base, best_models_history, generation_stats, assembly_registry
+
+
+# ====================================================================
+# ================ SIMPLISTIC TRAINER FUNCTION (NEW) ===========
+# ====================================================================
+
+def enhanced_trainer_step_with_assembly_tracking(population, step, assembly_registry, X_train, y_train):
+    """
+    Enhanced trainer step that integrates assembly tracking into the evolutionary process
+    """
+    
+    print(f"\n=== Step {step} with Assembly Tracking ===")
+    
+    # Update assembly registry step
+    assembly_registry.step_forward()
+    
+    # Phase 1: Enhanced message passing with tracking
+    enhanced_message_passing_with_assembly_tracking(population, step, assembly_registry)
+    
+    # Phase 2: Fitness evaluation with assembly tracking
+    for module in population:
+        pre_fitness = module.fitness
+        
+        # Compute new fitness (existing fitness computation)
+        if hasattr(module, 'compute_fitness'):
+            module.compute_fitness(X_train, y_train)
+        
+        # Track fitness changes
+        fitness_delta = module.fitness - pre_fitness
+        if abs(fitness_delta) > 0.01:  # Significant change
+            fitness_event = {
+                'module_id': module.id,
+                'event_type': 'fitness_update',
+                'step': step,
+                'pre_fitness': pre_fitness,
+                'post_fitness': module.fitness,
+                'fitness_delta': fitness_delta
+            }
+            assembly_registry.global_assembly_events.append({
+                'type': 'fitness_update',
+                'step': step,
+                'data': fitness_event
+            })
+    
+    # Phase 3: Selection and reproduction with assembly tracking
+    survivors = sorted(population, key=lambda m: m.fitness, reverse=True)[:len(population)//2]
+    offspring = []
+    
+    for parent in survivors[:len(survivors)//2]:  # Limit reproduction
+        # Select catalysts
+        available_catalysts = [m for m in population if m.id != parent.id]
+        catalysts = random.sample(available_catalysts, min(3, len(available_catalysts)))
+        
+        # Perform assembly-aware mutation
+        child = assembly_aware_mutation_with_tracking(parent, catalysts, step, assembly_registry)
+        
+        # Record assembly operation
+        if hasattr(child, 'record_assembly_operation'):
+            child.record_assembly_operation('mutation', [parent], catalysts)
+        
+        offspring.append(child)
+    
+    # Return new population
+    new_population = survivors + offspring
+    
+    # Report assembly statistics
+    stats = assembly_registry.get_assembly_statistics()
+    print(f"Assembly Stats: {stats['total_components']} components, "
+          f"{stats['message_influences']} msg influences, "
+          f"{stats['q_learning_influences']} Q influences")
+    
+    return new_population

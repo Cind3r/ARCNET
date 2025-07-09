@@ -21,48 +21,52 @@ def compute_loss(model, X, y, population=None, lambda_entropy=0.01, lambda_manif
         lambda_manifold: Weight for manifold regularization (default 0.01)
         lambda_message: Weight for message passing consistency (default 0.01)
     Returns:
-        total_loss: Computed loss value.
+        total_loss: Computed loss tensor with gradients.
     """
     
-    model.eval()
-    with torch.no_grad():
-        output = model(X)
-        # 1. Prediction loss (classification or regression)
-        if output.shape == y.shape or y.dtype == torch.float32:
-            # Regression or autoencoder
-            pred_loss = F.mse_loss(output, y)
-        else:
-            # Classification
-            if y.ndim == 2 and y.shape[1] > 1:
-                y = y.argmax(dim=1)
-            pred_loss = F.cross_entropy(output, y)
+    # Remove model.eval() and torch.no_grad() to enable gradients
+    model.train()  # Enable training mode for gradient computation
+    
+    output = model(X)
+    
+    # 1. Prediction loss (classification or regression)
+    if output.shape == y.shape or y.dtype == torch.float32:
+        # Regression or autoencoder
+        pred_loss = F.mse_loss(output, y)
+    else:
+        # Classification
+        if y.ndim == 2 and y.shape[1] > 1:
+            y = y.argmax(dim=1)
+        pred_loss = F.cross_entropy(output, y)
 
-        # 2. Entropy regularization (encourage diverse predictions)
-        probs = F.softmax(output, dim=1)
-        entropy = -torch.sum(probs * torch.log(probs + 1e-8), dim=1).mean()
-        entropy_loss = -lambda_entropy * entropy  # maximize entropy
+    # 2. Entropy regularization (encourage diverse predictions)
+    probs = F.softmax(output, dim=1)
+    entropy = -torch.sum(probs * torch.log(probs + 1e-8), dim=1).mean()
+    entropy_loss = -lambda_entropy * entropy  # maximize entropy
 
-        # 3. Manifold regularization (optional, if model has .position attribute)
-        manifold_loss = 0.0
-        if hasattr(model, "position") and population is not None:
-            # Encourage smoothness: penalize large distances to neighbors
-            neighbors = [m for m in population if m is not model]
-            if neighbors:
-                dists = [torch.norm(model.position - n.position) for n in neighbors]
-                manifold_loss = lambda_manifold * torch.stack(dists).mean()
+    # 3. Manifold regularization (optional, if model has .position attribute)
+    manifold_loss = torch.tensor(0.0, requires_grad=True)
+    if hasattr(model, "position") and population is not None:
+        # Encourage smoothness: penalize large distances to neighbors
+        neighbors = [m for m in population if m is not model]
+        if neighbors:
+            dists = [torch.norm(model.position - n.position) for n in neighbors]
+            manifold_loss = lambda_manifold * torch.stack(dists).mean()
 
-        # 4. Message passing consistency (optional, if model has .process_messages)
-        message_loss = 0.0
-        if hasattr(model, "process_messages"):
-            try:
-                msg = model.process_messages()
-                if msg is not None and hasattr(model, "last_hidden") and model.last_hidden is not None:
-                    message_loss = lambda_message * F.mse_loss(msg, model.last_hidden)
-            except Exception:
-                pass
+    # 4. Message passing consistency (optional, if model has .process_messages)
+    message_loss = torch.tensor(0.0, requires_grad=True)
+    if hasattr(model, "process_messages"):
+        try:
+            msg = model.process_messages()
+            if msg is not None and hasattr(model, "last_hidden") and model.last_hidden is not None:
+                message_loss = lambda_message * F.mse_loss(msg, model.last_hidden)
+        except Exception:
+            pass
 
-        total_loss = pred_loss + entropy_loss + manifold_loss + message_loss
-        return total_loss.item()
+    total_loss = pred_loss + entropy_loss + manifold_loss + message_loss
+    
+    # Return the tensor directly - DO NOT use .item()
+    return total_loss
 
 
 def intrinsic_loss(output, reconstruction, entropy_weight=0.01):

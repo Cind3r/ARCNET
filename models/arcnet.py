@@ -87,7 +87,8 @@ class ConceptModule(nn.Module):
         # Originally set as nn.Sequential, but now using individual layers for flexibility
         # potentially add more layers or change activation functions later (TanH works well
         # for biological models, Sigmoid for binary classification, etc.) 
-
+        
+        # This needs to be made more flexible in the future
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.act1 = nn.ReLU()
         self.dropout = nn.Dropout(0.1)
@@ -632,12 +633,15 @@ class ConceptModule(nn.Module):
         new_mod.assembly_index = new_mod.assembly_steps
         new_mod.catalyzed_by = [c.id for c in catalysts]
         # When mutating, create new ModuleComponent for mutated weights
-        for name, layer in [('fc1', self.fc1), ('fc2', self.fc2), ('fc3', self.fc3)]:
-            mutated_weight = layer.weight.data.clone() + torch.randn_like(layer.weight.data) * 0.01
-            parent_component = self.layer_components[name]
+        for name, layer in [('fc1', new_mod.fc1), ('fc2', new_mod.fc2), ('fc3', new_mod.fc3)]:
+            # Get the mutated weight from the new module (already mutated by load_state_dict + parameter mutation)
+            mutated_weight = layer.weight.data.clone()
+            parent_component = self.layer_components[name]  # Get parent component from SELF
             new_component = ModuleComponent(mutated_weight, parents=[parent_component], operation='mutation')
-            self.layer_components[name] = new_component
-        self.assembly_pathway = [self.layer_components['fc1'], self.layer_components['fc2'], self.layer_components['fc3']]
+            new_mod.layer_components[name] = new_component  # Assign to NEW module
+        
+        # Update assembly pathway for new module
+        new_mod.assembly_pathway = [new_mod.layer_components['fc1'], new_mod.layer_components['fc2'], new_mod.layer_components['fc3']]
 
         for c in catalysts:
             c.catalyzes.append(new_mod.id)
@@ -663,16 +667,6 @@ class ConceptModule(nn.Module):
     #    # A(S) = Σ e^(a_i) * (n_i - 1) / N_T
     #    return math.exp(self.assembly_index) * (self.copy_number - 1) / total_population
     
-    def compute_assembly_index(self):
-        """Compute Assembly Index A(m_i) = minimum operations to construct"""
-        if not self.assembly_operations:
-            self.assembly_index = 0
-            return 0
-        
-        # This is a simplified version - true AT requires more complex optimization
-        unique_operations = set(self.hashable_op(op) for op in self.assembly_operations)
-        self.assembly_index = len(unique_operations)
-        return self.assembly_index
     
     def record_assembly_operation(self, operation_type, parent_modules, catalysts):
         """Record operations for true Assembly Theory"""
@@ -687,6 +681,7 @@ class ConceptModule(nn.Module):
         # Update assembly index
         self.compute_assembly_index()
 
+    # POTENTIALLY DEPRECATED:
     def get_assembly_complexity_contribution(self, population):
         """Corrected system complexity following theorem"""
         if not population:
@@ -709,16 +704,27 @@ class ConceptModule(nn.Module):
         """
         Returns a dict with per-layer and total assembly complexity.
         """
-        complexities = {name: comp.get_minimal_assembly_complexity() for name, comp in self.layer_components.items()}
-        total = sum(complexities.values())
+        complexities = {}
+        total = 0
+        for name, comp in self.layer_components.items():
+            complexity = comp.get_minimal_assembly_complexity()
+            complexities[name] = complexity
+            total += complexity
+        
         complexities['total'] = total
         return complexities
 
     def compute_assembly_index(self):
         """
         Computes the assembly index for this module as the sum of per-layer complexities.
+        This represents the total assembly complexity of all components.
         """
-        return self.get_assembly_complexity()['total']
+        total_complexity = 0
+        for name, component in self.layer_components.items():
+            total_complexity += component.get_minimal_assembly_complexity()
+        
+        self.assembly_index = total_complexity
+        return self.assembly_index
 
     # ==========================================================
     # ====================== Other Methods =====================
