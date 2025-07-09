@@ -2,6 +2,8 @@ import torch
 import os
 from tqdm.notebook import tqdm
 from datetime import datetime
+import numpy as np
+import random
 from ARCNET.models.arcnet_learner import ConceptModule
 from ARCNET.evolution.fitness import (
     compute_fitness_adaptive_complexity_enhanced

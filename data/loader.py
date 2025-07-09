@@ -22,7 +22,7 @@ def save_lineage_snapshot_to_file(modules, step, filename_base, format='pickle')
     """
     
     # Create directory if it doesn't exist
-    Path("lineage_snapshots").mkdir(exist_ok=True)
+    Path("ARCNET/experiments/lineage_snaps").mkdir(exist_ok=True)
     
     # Create lightweight snapshot data
     snapshot_data = {
@@ -62,11 +62,11 @@ def save_lineage_snapshot_to_file(modules, step, filename_base, format='pickle')
             continue
     
     if format == 'pickle':
-        filename = f"lineage_snapshots/{filename_base}_step_{step:04d}.pkl"
+        filename = f"ARCNET/experiments/lineage_snaps/{filename_base}_step_{step:04d}.pkl"
         with open(filename, 'wb') as f:
             pickle.dump(snapshot_data, f)
     elif format == 'json':
-        filename = f"lineage_snapshots/{filename_base}_step_{step:04d}.json"
+        filename = f"ARCNET/experiments/lineage_snaps/{filename_base}_step_{step:04d}.json"
         with open(filename, 'w') as f:
             json.dump(snapshot_data, f, indent=2)
     
@@ -105,7 +105,7 @@ def load_all_lineage_snapshots(filename_base, steps_range=None):
     Returns:
         List of snapshot data dictionaries
     """
-    snapshot_dir = Path("lineage_snapshots")
+    snapshot_dir = Path("ARCNET/experiments/lineage_snaps")
     
     # Find all snapshot files
     pattern = f"{filename_base}_step_*.pkl"
