@@ -73,3 +73,4 @@ Instead of choosing a discrete action, the agent holds a superposition of policy
 
 
 <img src=examples/mermaid-diagram-2025-07-09-130549.png>
+<img src=examples/mermaid-diagram-VERT.svg>
