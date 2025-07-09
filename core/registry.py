@@ -19,6 +19,7 @@ class AssemblyTrackingRegistry:
         self.assembly_dependency_graph = defaultdict(set)  # component_id -> set of dependent components
         self.step_counter = 0
         self.global_assembly_events = []
+        self.complexity_history = []  # Track assembly complexity over time
         
     def create_parameter_snapshot(self, module, event_type="initialization"):
         """Create a snapshot of all module parameters for tracking"""
@@ -396,10 +397,16 @@ class AssemblyTrackingRegistry:
     def step_forward(self):
         """Advance the step counter"""
         self.step_counter += 1
+        stats = self.get_assembly_statistics()
+        self.complexity_history.append(stats['max_assembly_depth'])
     
     def get_module_assembly_history(self, module_id):
         """Get complete assembly history for a specific module"""
         return self.parameter_update_history.get(module_id, [])
+    
+    def get_complexity_history(self):
+        """Return the history of maximal assembly complexity (depth) at each step."""
+        return self.complexity_history
     
     def get_component_lineage(self, component_id):
         """Get the complete lineage of a component including all influences"""
