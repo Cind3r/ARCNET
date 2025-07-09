@@ -1,4 +1,5 @@
 import torch.nn.functional as F
+import torch
 
 def intrinsic_loss(output, reconstruction, entropy_weight=0.01):
     recon_loss = F.mse_loss(reconstruction, output)
