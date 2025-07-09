@@ -72,4 +72,4 @@ Instead of choosing a discrete action, the agent holds a superposition of policy
 ![til](examples/population_density_3d_snapshots.gif)
 
 
-![til](examples/ARCNET-mermaid-diagram-simple.svg)
+<img src=examples/mermaid-diagram-2025-07-09-130549.png>
