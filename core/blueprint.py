@@ -18,7 +18,9 @@ class ArchitectureBlueprint:
                 return module
         return None
 
-    def visualize(self, filename="architecture_graph.png"):
+    def visualize(self, experiment_name="arcnet"):
+        filepath = f"ARCNET/experiments/architecture_graphs/{experiment_name}_architecture_graph.png"
+        
         G = nx.DiGraph()
         for module in self.modules:
             G.add_node(module.id[:8])
@@ -27,5 +29,5 @@ class ArchitectureBlueprint:
         plt.figure(figsize=(10, 6))
         nx.draw(G, with_labels=True, node_size=500, node_color="lightblue")
         plt.title("Architecture Blueprint Graph")
-        plt.savefig(filename)
+        plt.savefig(filepath)
         plt.close()

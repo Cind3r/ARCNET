@@ -5,7 +5,7 @@ from sklearn.decomposition import PCA
 import math
 import numpy as np
 from ARCNET.evolution.fitness import compute_manifold_novelty
-
+from ARCNET.core.registry import ModuleComponent
 from ARCNET.core.QModule import CompressedQModule
 from ARCNET.core.registry import ComponentRegistry
 
@@ -152,7 +152,13 @@ class ConceptModule(nn.Module):
         self.catalyzes = []
         self.assembly_index = 0
         self.copy_number = 1
-        self.assembly_pathway = []
+        self.layer_components = {
+            'fc1': ModuleComponent(self.fc1.weight.data.clone()),
+            'fc2': ModuleComponent(self.fc2.weight.data.clone()),
+            'fc3': ModuleComponent(self.fc3.weight.data.clone())
+        }
+        self.assembly_pathway = [self.layer_components['fc1'], self.layer_components['fc2'], self.layer_components['fc3']]
+
         self.assembly_operations = [] # Track actual operations to construct this module
         self.minimal_construction_path = []  # Shortest path to construct
 
@@ -227,6 +233,7 @@ class ConceptModule(nn.Module):
         out = self.fc3(h2)
         return out
 
+    # NOTE: Consider removal of geodesic as complexity becomes too large and computationally expensive
     def geodesic_interpolate(self, target_pos, alpha=0.5):
         """Interpolate along geodesic path"""
         if self.local_tangent_space is None:
@@ -241,6 +248,7 @@ class ConceptModule(nn.Module):
         geodesic_step = alpha * tangent_proj
         new_pos = self.position.data + torch.matmul(geodesic_step, self.local_tangent_space.T)
         return new_pos.clamp(0, 1)
+
 
     def manifold_distance(self, other_pos):
         # Always compute Euclidean as baseline
@@ -263,11 +271,10 @@ class ConceptModule(nn.Module):
             if geodesic_dist > 3 * euclidean_dist:
                 print(f"Warning: Geodesic distance {geodesic_dist:.4f} is unusually high compared to Euclidean {euclidean_dist:.4f}. Using Euclidean instead.")
                 return euclidean_dist
-            
             return geodesic_dist
-            
         except Exception:
             return euclidean_dist
+
 
     def update_local_geometry(self, neighbors):
         """Estimate local tangent space and curvature"""
@@ -624,7 +631,13 @@ class ConceptModule(nn.Module):
         new_mod.assembly_steps = max([c.assembly_steps for c in catalysts]) + 1
         new_mod.assembly_index = new_mod.assembly_steps
         new_mod.catalyzed_by = [c.id for c in catalysts]
-        new_mod.assembly_pathway = self.assembly_pathway + [self.id]
+        # When mutating, create new ModuleComponent for mutated weights
+        for name, layer in [('fc1', self.fc1), ('fc2', self.fc2), ('fc3', self.fc3)]:
+            mutated_weight = layer.weight.data.clone() + torch.randn_like(layer.weight.data) * 0.01
+            parent_component = self.layer_components[name]
+            new_component = ModuleComponent(mutated_weight, parents=[parent_component], operation='mutation')
+            self.layer_components[name] = new_component
+        self.assembly_pathway = [self.layer_components['fc1'], self.layer_components['fc2'], self.layer_components['fc3']]
 
         for c in catalysts:
             c.catalyzes.append(new_mod.id)
@@ -635,6 +648,10 @@ class ConceptModule(nn.Module):
     # ================ Simplified Assembly Tracking ==============
     # ==========================================================
 
+    """
+    Something in this section is deprecated, and needs to be removed. Tracking system
+    complexity is more difficult than I thought. 
+    """
     
     #def compute_assembly_index(self):
     #    """Compute assembly index A(m_i) = a_i"""
@@ -671,7 +688,7 @@ class ConceptModule(nn.Module):
         self.compute_assembly_index()
 
     def get_assembly_complexity_contribution(self, population):
-        """Corrected system complexity following your theorem"""
+        """Corrected system complexity following theorem"""
         if not population:
             return 0.0
         
@@ -687,6 +704,21 @@ class ConceptModule(nn.Module):
             total_complexity += contribution
         
         return total_complexity
+
+    def get_assembly_complexity(self):
+        """
+        Returns a dict with per-layer and total assembly complexity.
+        """
+        complexities = {name: comp.get_minimal_assembly_complexity() for name, comp in self.layer_components.items()}
+        total = sum(complexities.values())
+        complexities['total'] = total
+        return complexities
+
+    def compute_assembly_index(self):
+        """
+        Computes the assembly index for this module as the sum of per-layer complexities.
+        """
+        return self.get_assembly_complexity()['total']
 
     # ==========================================================
     # ====================== Other Methods =====================
@@ -719,3 +751,15 @@ class ConceptModule(nn.Module):
     
     # ==================== END OF CLASS =====================
 
+
+def system_assembly_complexity(population):
+    """
+    Computes system assembly complexity as in the notebook formula.
+    population: list of ConceptModule instances
+    """
+    from collections import Counter
+    complexities = [m.compute_assembly_index() for m in population]
+    ids = [id(m) for m in population]
+    counts = Counter(ids)
+    N = len(population)
+    return sum(math.exp(a_i) * (counts[ids[i]] - 1) / N for i, a_i in enumerate(complexities)) / N

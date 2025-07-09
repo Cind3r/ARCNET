@@ -4,24 +4,25 @@ from tqdm.notebook import tqdm
 from datetime import datetime
 import numpy as np
 import random
-from ARCNET.models.arcnet_learner import ConceptModule
-from ARCNET.evolution.fitness import (
+from models.arcnet import ConceptModule
+from evolution.fitness import (
     compute_fitness_adaptive_complexity_enhanced
 )
-from ARCNET.evolution.rewards import (
+from evolution.rewards import (
     compute_manifold_novelty,
     compute_system_assembly_complexity, 
     compute_reward_adaptive_aan_normalized
 )
-from ARCNET.core.message import (
+from evolution.loss import compute_loss
+from core.message import (
     comprehensive_manifold_q_message_passing
 )
-from ARCNET.evolution.bias import (
+from evolution.bias import (
     monitor_prediction_diversity_with_action,
     catalyst_bias_elimination,
     select_bias_resistant_catalysts
 )
-from ARCNET.data.loader import (
+from data.loader import (
     load_and_seed_population_fixed,
     save_lineage_snapshot_to_file,
     export_best_models
@@ -29,7 +30,7 @@ from ARCNET.data.loader import (
 
 
 # This function can definitely be simplified, for now it is comprehensive and includes all the features we want to test.
-def run_aan_comprehensive_q_learning(
+def Trainer(
         X_train, 
         y_train, 
         input_dim, 
@@ -43,6 +44,7 @@ def run_aan_comprehensive_q_learning(
         lineage_prune_rate=1200,
         lineage_kept=600,
         q_learning_method='neural',
+        training_method='loss',
         enable_model_save=False, 
         enable_bias_elimination=True,
         enable_lineage_snap=True,
@@ -69,6 +71,7 @@ def run_aan_comprehensive_q_learning(
         - lineage_prune_rate: Rate at which to prune the lineage registry
         - lineage_kept: Number of modules to keep in the lineage registry
         - q_learning_method: Method for Q-learning ('neural' or 'table')
+        - training_method: Method for training modules ('loss' or 'fitness')
         - enable_model_save: Whether to save models after each step (for debugging/multiple runs)
         - enable_bias_elimination: Whether to enable bias elimination (adaptive bias elimination based on prediction diversity and steps)
         - enable_lineage_snap: Whether to enable lineage snapshot saving for visualization
@@ -133,16 +136,31 @@ def run_aan_comprehensive_q_learning(
         pass
         
     for step in range(steps):
-        # ================ 1. FITNESS EVALUATION ================            
+        # ================ 1. LOSS/FITNESS EVALUATION ================            
         for m in population:
             
-            if epochs > 1:
-                for epoch in range(epochs):
-                    m.train(X_train, y_train)
-                    
-            m.cpu()
-            m.eval()
-            m.fitness = compute_fitness_adaptive_complexity_enhanced(m, X_train, y_train)
+            if training_method == 'fitness':
+                if epochs > 1:
+                    for epoch in range(epochs):
+                        m.train(X_train, y_train)
+                        
+                m.cpu()
+                m.eval()
+                m.fitness = compute_fitness_adaptive_complexity_enhanced(m, X_train, y_train)
+
+            elif training_method == 'loss':
+                
+                m.train()  # set to training mode
+                optimizer = torch.optim.Adam(m.parameters(), lr=1e-3)
+                for _ in range(epochs):  # e.g., local_steps=3
+                    optimizer.zero_grad()
+                    output = m(X_train)
+                    loss = compute_loss(m, X_train, y_train, population=population)
+                    loss.backward()
+                    optimizer.step()
+                m.cpu()
+                m.eval()  # set back to eval mode
+                
 
             # Likely computational overhead, kept incase something bugs out
             #if m.id not in lineage_registry:
