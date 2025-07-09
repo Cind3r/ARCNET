@@ -1,3 +1,5 @@
+import torch.nn as nn
+
 class TimeSeriesAdapter(nn.Module):
     def __init__(self, in_features=10):
         super().__init__()

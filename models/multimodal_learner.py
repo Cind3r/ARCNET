@@ -1,6 +1,6 @@
 import torch.nn as nn
 from models.learner import ModularGeneralLearner
-from models.fusion import CrossModalFusion
+from evolution.fusion import CrossModalFusion
 
 class MultimodalLearner(nn.Module):
     def __init__(self, blueprint, adapters, embed_dim=128):
