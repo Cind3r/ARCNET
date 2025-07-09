@@ -36,6 +36,7 @@ This is an explicit example of an abstraction network with *partial* autocatalyt
 We're going to see if we can improve the process of higher-order abstractions and maintaining accuracy by incorporating manifold folding of abstractions in a 3d space. 
 
 ![til](examples/lineage_evolution.gif)
+![til](examples/lineage_evolution_3d_depth.gif)
 
 ***
 ## What if we add QISRL (Learning in Curved Decision Spaces)
@@ -67,10 +68,6 @@ where $g_{ij}(x)$ is learned via a neural net based on reqard curvature and tran
 
 Instead of choosing a discrete action, the agent holds a superposition of policy branches weighted by complex-valued amplitudes, which collapse during high-reward observations. It’s not quantum computing only inspired.
 
-![til](examples/lineage_evolution_3d_depth.gif)
-![til](examples/lineage_evolution_3d_fitness.gif)
-![til](examples/population_density_3d_snapshots.gif)
-
-
-
-<img src=examples/mermaid-diagram-VERT.svg height=1800/>
+***
+## Architecture Workflow Diagram
+<img src=examples/mermaid-diagram-VERT.svg height=3000/>
