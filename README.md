@@ -69,115 +69,97 @@ where $g_{ij}(x)$ is learned via a neural net based on reqard curvature and tran
 Instead of choosing a discrete action, the agent holds a superposition of policy branches weighted by complex-valued amplitudes, which collapse during high-reward observations. It’s not quantum computing only inspired.
 
 ***
-## Architecture Workflow Diagram (ASCII)
+## Architecture Workflow Diagram 
+```mermaid
+flowchart TD
+    %% Initialization
+    A["Start: run_aan_comprehensive_q_learning<br/>(core/trainer.py)"] --> B{Enable Model Save?}
+    B -- Yes, Resume --> C["load_and_seed_population_fixed<br/>(data/loader.py)"]
+    B -- No, Fresh --> D["Create ConceptModule(s)<br/>(models/arcnet_learner.py)"]
+    C --> E["Initialize Lineage Registry"]
+    D --> E
+    E --> F["Convert Data to Tensors<br/>(core/trainer.py)"]
+    F --> G["For each Evolution Step (steps)"]
+    G --> H1["For each Module in Population"]
+    %% Training method branch
+    H1 --> H2{training_method}
+    H2 -- "fitness" --> I1["compute_fitness_adaptive_complexity_enhanced<br/>(evolution/fitness.py)"]
+    H2 -- "loss" --> I2["Gradient Descent (compute_loss + optimizer)<br/>(evolution/loss.py)"]
+    I1 --> J["Set m.fitness"]
+    I2 --> K["Set m.loss, m.fitness = -m.loss"]
+    J --> L
+    K --> L
+    %% Q-Learning
+    L["Q-Learning Update<br/>(m.update_q, core/QModule.py)"] --> M["Message Passing<br/>(comprehensive_manifold_q_message_passing, core/message.py)"]
+    %% Bias detection
+    M --> N["Bias Detection<br/>(monitor_prediction_diversity_with_action, evolution/bias.py)"]
+    N --> O{Enable Bias Elimination?}
+    O -- Yes, Needed --> P["catalyst_bias_elimination<br/>(evolution/bias.py)"]
+    O -- No/Not Needed --> Q["Continue"]
+    P --> Q
+    %% Tracking
+    Q --> R{track_best_models?}
+    R -- Yes --> S["Track Best Models/Stats<br/>(core/trainer.py)"]
+    R -- No --> T["Skip Tracking"]
+    S --> U
+    T --> U
+    %% Survival selection
+    U["Q-Guided Survival Selection<br/>(core/trainer.py)"] --> V["Q-Guided Reproduction & Mutation<br/>(mutate, choose_action, models/arcnet_learner.py)"]
+    V --> W["Q-Experience Inheritance<br/>(core/QModule.py)"]
+    W --> X["Population Update"]
+    X --> Y{enable_lineage_snap?}
+    Y -- Yes --> Z["save_lineage_snapshot_to_file<br/>(data/loader.py)"]
+    Y -- No --> AA["Skip Snapshot"]
+    Z --> AB
+    AA --> AB
+    AB{Lineage Pruning Needed?}
+    AB -- Yes --> AC["Prune Lineage Registry<br/>(core/trainer.py)"]
+    AB -- No --> AD["Continue"]
+    AC --> AE["Next Step or Finish"]
+    AD --> AE
+    AE --> AF{All Steps Done?}
+    AF -- No --> G
+    AF -- Yes --> AG["Theorem Checks & Final Reporting<br/>(core/trainer.py)"]
+    AG --> AH{enable_model_save?}
+    AH -- Yes --> AI["export_best_models<br/>(data/loader.py)"]
+    AH -- No --> AJ["Return Results"]
+    AI --> AJ
+    AJ["Export (END)
+    - Final population of models
+    - Best model overall"]
 
-+-----------------------------------------------------------------------------------+
-|                run Trainer (core/trainer.py)                                      |
-+-----------------------------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| Initialization    |  core/trainer.py                                              |
-|                   |  - Creates initial population of ConceptModule                |
-|                   |  - Initializes lineage, reward history                        |
-|                   |  - Uses: models/arcnet.py (ConceptModule)                     |
-|                   |         core/blueprint.py (ArchitectureBlueprint, if used)    |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| Main Evolutionary Loop (for each step)                                            |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 1. Module Training/Evaluation                                                     |
-|   - For each module in population:                                                |
-|     - If 'loss':                                                                  |
-|         * Local gradient descent (Adam)                                           |
-|           (core/trainer.py, evolution/loss.py: compute_loss)                      |
-|         * Set m.fitness = -m.loss                                                 |
-|     - If 'fitness':                                                               |
-|         * Compute fitness (evolution/fitness.py)                                  |
-|     - Model: models/arcnet.py (ConceptModule)                                     |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 2. Q-Learning Update                                                              |
-|   - For each module:                                                              |
-|     - Compute reward (evolution/rewards.py: compute_reward_adaptive_aan_normalized)|
-|     - Update Q-function (core/QModule.py: CompressedQModule)                      |
-|     - Q-function is a neural net per module (models/arcnet_learner.py)            |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 3. Message Passing                                                                |
-|   - Information flow between modules                                              |
-|   - core/message.py: comprehensive_manifold_q_message_passing                     |
-|   - models/arcnet_learner.py: process_messages, receive_message                   |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 4. Bias Detection & Elimination                                                   |
-|   - Monitor and eliminate biased modules                                          |
-|   - evolution/bias.py: monitor_prediction_diversity_with_action,                  |
-|                       catalyst_bias_elimination, select_bias_resistant_catalysts  |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 5. Tracking & Monitoring                                                          |
-|   - Save best models, track stats, snapshots                                      |
-|   - core/trainer.py (best_models_history, generation_stats, save_lineage_snapshot)|
-|   - data/loader.py: save_lineage_snapshot_to_file, export_best_models             |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 6. Survival Selection                                                             |
-|   - Q-learning influenced selection                                               |
-|   - core/trainer.py (sort by m._survival_score)                                   |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 7. Reproduction & Mutation                                                        |
-|   - Q-guided target selection, catalyst selection                                 |
-|   - models/arcnet.py: mutate, record_assembly_operation                           |
-|   - evolution/bias.py: select_bias_resistant_catalysts                            |
-|   - Manifold-aware position update (geodesic_interpolate)                         |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 8. Q-Experience Inheritance                                                       |
-|   - Offspring inherit Q-experiences from catalysts                                |
-|   - core/QModule.py: replay_buffer                                                |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 9. Population Update                                                              |
-|   - Survivors + offspring become new population                                   |
-|   - core/trainer.py                                                               |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 10. Lineage Pruning                                                               |
-|   - Prune lineage registry to keep it manageable                                  |
-|   - core/trainer.py                                                               |
-+-------------------+---------------------------------------------------------------+
-        |
-        v
-+-------------------+---------------------------------------------------------------+
-| 11. Final Reporting                                                               |
-|   - Print stats, export models, return results                                    |
-|   - core/trainer.py                                                               |
-+-------------------+---------------------------------------------------------------+
+    %% Math/Proof Annotations (as comments)
+    %% - Fitness/Loss boundedness: I1, I2
+    %% - Q-learning convergence: L
+    %% - Manifold message passing: M
+    %% - Bias elimination theorem: N, P
+    %% - Survival selection optimality: U
+    %% - Reproduction diversity: V
+    %% - Q-knowledge transfer: W
+    %% - Global convergence: AG
+
+    %% Styling for clarity
+    classDef main fill:#333333,stroke:#00796b,stroke-width:3px;
+    classDef branch fill:#333333,stroke:#fbc02d,stroke-width:3px;
+    classDef op fill:#333333,stroke:#f57c00,stroke-width:3px;
+    classDef qlearn fill:#333333,stroke:#7b1fa2,stroke-width:3px;
+    classDef bias fill:#333333,stroke:#c62828,stroke-width:3px;
+    classDef track fill:#333333,stroke:#388e3c,stroke-width:3px;
+    classDef repro fill:#333333,stroke:#1976d2,stroke-width:3px;
+    classDef pop fill:#333333,stroke:#827717,stroke-width:3px;
+    classDef prune fill:#333333,stroke:#5d4037,stroke-width:3px;
+    classDef theorem fill:#333333,stroke:#ad1457,stroke-width:3px;
+
+    linkStyle default stroke:grey, stroke-width:3px
+
+
+    class A,B,C,D,E,F,G,H1,H2,I1,I2,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z,AA,AB,AC,AD,AE,AF,AG,AH,AI,AJ main;
+    class I1,I2 op;
+    class L qlearn;
+    class N,P,U bias;
+    class V,W,X repro;
+```
+
 
 ***
 <img src=examples/mermaid-diagram-VERT.svg />
