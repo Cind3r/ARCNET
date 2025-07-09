@@ -71,7 +71,7 @@ Instead of choosing a discrete action, the agent holds a superposition of policy
 ***
 ## Architecture Workflow Diagram 
 
-To avoid scrolling, `ARCNET.core.trainer` was broken down into horizontal sections meant to be read L -> R. Any arrow coming off a subgraph (e.g., "Initialization") is coming from the RIGHT MOST block in the workflow diagram. 
+To avoid scrolling, `ARCNET.core.trainer` was broken down into horizontal sections meant to be read L -> R. Any arrow coming off a subgraph (e.g., "Initialization") is coming from the RIGHT MOST block in the workflow diagram. This is most confusing for 'Lineage & Pruning' where the arrows "Yes" and "No" are both coming from "All Steps Done?".
 
 ```mermaid
 ---
