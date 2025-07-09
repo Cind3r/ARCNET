@@ -70,3 +70,6 @@ Instead of choosing a discrete action, the agent holds a superposition of policy
 ![til](examples/lineage_evolution_3d_depth.gif)
 ![til](examples/lineage_evolution_3d_fitness.gif)
 ![til](examples/population_density_3d_snapshots.gif)
+
+
+![til](examples/ARCNET-mermaid-diagram-simple.svg)
