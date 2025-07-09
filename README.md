@@ -70,6 +70,9 @@ Instead of choosing a discrete action, the agent holds a superposition of policy
 
 ***
 ## Architecture Workflow Diagram 
+
+To avoid scrolling, `ARCNET.core.trainer` was broken down into horizontal sections meant to be read L -> R. Any arrow coming off a subgraph (e.g., "Initialization") is coming from the RIGHT MOST block in the workflow diagram. 
+
 ```mermaid
 ---
 config:
