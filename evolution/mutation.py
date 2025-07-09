@@ -1,5 +1,7 @@
 import random
+import torch.nn as nn
 from core.components import TrackedLayer
+
 
 def mutate_blueprint(blueprint, registry, mutation_rate=0.1):
     for module in blueprint.modules:
