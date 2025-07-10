@@ -976,10 +976,12 @@ class MemoryEfficientRegistry:
             'assembly_events': len(self.assembly_events)
         }
 
+
 # Update the existing registry to use the memory-efficient version
 class AssemblyTrackingRegistryME(MemoryEfficientRegistry):
     """
     Drop-in replacement for the existing registry with memory optimizations
+    Includes global tracking system using hashes
     """
     
     def __init__(self):
@@ -987,15 +989,206 @@ class AssemblyTrackingRegistryME(MemoryEfficientRegistry):
         # Keep some backward compatibility
         self.component_registry = {}
         self.parameter_update_history = self.parameter_snapshots  # Alias for compatibility
+        
+        # Add global tracking attributes for compatibility
+        self.global_assembly_events = self.assembly_events  # Alias for compatibility
+        self.message_influence_graph = {}  # Lightweight message tracking
+        self.q_learning_inheritance_graph = {}  # Lightweight Q-learning inheritance
+        self.complexity_history = []  # Track system complexity over time
+        
+        # Global hash-based tracking
+        self.global_component_hashes = set()  # All unique component hashes seen
+        self.global_reuse_graph = {}  # hash -> list of modules that use it
+        self.step_wise_complexity = []  # Complexity at each step
+        self.generation_statistics = {}  # Per-generation assembly stats
     
     def create_parameter_snapshot(self, module, event_type="initialization"):
         """Backward compatibility method"""
         return self.create_lightweight_snapshot(module, event_type)
     
     def track_mutation_with_assembly_inheritance(self, parent_module, child_module, catalysts=None):
-        """Backward compatibility method"""
-        return self.track_mutation_with_lightweight_inheritance(parent_module, child_module, catalysts)
-
+        """Backward compatibility method with enhanced global tracking"""
+        result = self.track_mutation_with_lightweight_inheritance(parent_module, child_module, catalysts)
+        
+        # Add global tracking for message and Q-learning inheritance
+        if catalysts:
+            for catalyst in catalysts:
+                # Track message influence (lightweight)
+                catalyst_hash = self._generate_module_summary_hash(catalyst)
+                child_hash = self._generate_module_summary_hash(child_module)
+                
+                if catalyst_hash not in self.message_influence_graph:
+                    self.message_influence_graph[catalyst_hash] = []
+                self.message_influence_graph[catalyst_hash].append(child_hash)
+                
+                # Track Q-learning inheritance (lightweight)
+                if hasattr(catalyst, 'q_function') and hasattr(child_module, 'q_function'):
+                    if catalyst_hash not in self.q_learning_inheritance_graph:
+                        self.q_learning_inheritance_graph[catalyst_hash] = []
+                    self.q_learning_inheritance_graph[catalyst_hash].append(child_hash)
+        
+        return result
+    
+    def _generate_module_summary_hash(self, module):
+        """Generate a lightweight hash for a module based on key properties"""
+        summary_parts = [
+            str(getattr(module, 'id', 'unknown')),
+            str(getattr(module, 'fitness', 0.0))[:8],  # Truncate for stability
+            str(getattr(module, 'assembly_index', 0)),
+            str(getattr(module, 'created_at', 0))
+        ]
+        
+        # Add position hash if available
+        if hasattr(module, 'position'):
+            pos_hash = self.assembly_tracker._generate_layer_hash(module.position)
+            summary_parts.append(pos_hash)
+        
+        return hashlib.md5("_".join(summary_parts).encode()).hexdigest()[:12]
+    
+    def track_global_component_reuse(self, module):
+        """Track component reuse at the global level using hashes"""
+        module_components = self.assembly_tracker.extract_components_from_module(module)
+        
+        for comp in module_components:
+            comp_hash = comp.content_hash
+            
+            # Add to global hash registry
+            self.global_component_hashes.add(comp_hash)
+            
+            # Track which modules use this component
+            if comp_hash not in self.global_reuse_graph:
+                self.global_reuse_graph[comp_hash] = []
+            
+            module_summary = {
+                'module_id': module.id,
+                'generation': getattr(module, 'created_at', 0),
+                'component_type': comp.component_type,
+                'layer_name': comp.layer_name
+            }
+            self.global_reuse_graph[comp_hash].append(module_summary)
+    
+    def step_forward(self):
+        """Advance step counter with enhanced global tracking"""
+        super().step_forward()
+        
+        # Track complexity progression
+        stats = self.get_assembly_statistics()
+        self.complexity_history.append({
+            'step': self.step_counter,
+            'total_components': stats['total_components'],
+            'reused_components': stats['reused_components'],
+            'reuse_rate': stats['reused_components'] / max(1, stats['total_components']),
+            'unique_hashes': len(self.global_component_hashes),
+            'global_reuse_instances': sum(len(instances) for instances in self.global_reuse_graph.values())
+        })
+        
+        self.step_wise_complexity.append(stats['total_components'])
+    
+    def update_generation_statistics(self, generation, population):
+        """Update statistics for a specific generation"""
+        generation_components = set()
+        generation_modules = []
+        
+        for module in population:
+            if getattr(module, 'created_at', 0) == generation:
+                generation_modules.append(module)
+                # Track global component reuse for this module
+                self.track_global_component_reuse(module)
+                
+                # Extract component hashes for this generation
+                module_components = self.assembly_tracker.extract_components_from_module(module)
+                for comp in module_components:
+                    generation_components.add(comp.content_hash)
+        
+        # Calculate generation-specific statistics
+        total_population = len(generation_modules)
+        avg_fitness = sum(getattr(m, 'fitness', 0.0) for m in generation_modules) / max(1, total_population)
+        avg_assembly_index = sum(getattr(m, 'assembly_index', 0) for m in generation_modules) / max(1, total_population)
+        
+        # Count reused components in this generation
+        reused_count = 0
+        for comp_hash in generation_components:
+            if len(self.global_reuse_graph.get(comp_hash, [])) > 1:
+                reused_count += 1
+        
+        self.generation_statistics[generation] = {
+            'population_size': total_population,
+            'unique_components': len(generation_components),
+            'reused_components': reused_count,
+            'reuse_rate': reused_count / max(1, len(generation_components)),
+            'avg_fitness': avg_fitness,
+            'avg_assembly_index': avg_assembly_index,
+            'total_global_components': len(self.global_component_hashes)
+        }
+    
+    def get_assembly_complexity_history(self):
+        """Get the history of assembly complexity over time (backward compatibility)"""
+        return self.complexity_history
+    
+    def get_global_assembly_statistics(self):
+        """Get comprehensive global assembly statistics"""
+        total_reuse_instances = sum(len(instances) for instances in self.global_reuse_graph.values())
+        highly_reused_components = [
+            (comp_hash, len(instances)) 
+            for comp_hash, instances in self.global_reuse_graph.items() 
+            if len(instances) > 2
+        ]
+        
+        return {
+            'total_unique_components': len(self.global_component_hashes),
+            'total_reuse_instances': total_reuse_instances,
+            'average_reuse_per_component': total_reuse_instances / max(1, len(self.global_component_hashes)),
+            'highly_reused_components': len(highly_reused_components),
+            'top_reused_components': sorted(highly_reused_components, key=lambda x: x[1], reverse=True)[:10],
+            'message_influence_connections': len(self.message_influence_graph),
+            'q_learning_inheritance_connections': len(self.q_learning_inheritance_graph),
+            'generations_tracked': len(self.generation_statistics)
+        }
+    
+    def get_component_lineage(self, component_hash):
+        """Get the complete lineage of a component using hash-based tracking"""
+        if component_hash not in self.global_reuse_graph:
+            return None
+        
+        instances = self.global_reuse_graph[component_hash]
+        
+        lineage = {
+            'component_hash': component_hash,
+            'total_instances': len(instances),
+            'first_appearance': min(inst['generation'] for inst in instances),
+            'last_appearance': max(inst['generation'] for inst in instances),
+            'generations_spanned': max(inst['generation'] for inst in instances) - min(inst['generation'] for inst in instances) + 1,
+            'modules_using': [inst['module_id'] for inst in instances],
+            'component_types': list(set(inst['component_type'] for inst in instances)),
+            'layer_names': list(set(inst['layer_name'] for inst in instances))
+        }
+        
+        return lineage
+    
+    def get_memory_usage_estimate(self):
+        """Enhanced memory usage estimation including global tracking"""
+        base_usage = super().get_memory_usage_estimate()
+        
+        import sys
+        
+        global_tracking_size = 0
+        global_tracking_size += sys.getsizeof(self.global_component_hashes)
+        global_tracking_size += sys.getsizeof(self.global_reuse_graph)
+        global_tracking_size += sys.getsizeof(self.message_influence_graph)
+        global_tracking_size += sys.getsizeof(self.q_learning_inheritance_graph)
+        global_tracking_size += sys.getsizeof(self.generation_statistics)
+        
+        base_usage.update({
+            'global_tracking_bytes': global_tracking_size,
+            'global_tracking_mb': global_tracking_size / (1024 * 1024),
+            'unique_component_hashes': len(self.global_component_hashes),
+            'global_reuse_entries': len(self.global_reuse_graph),
+            'message_influence_entries': len(self.message_influence_graph),
+            'q_inheritance_entries': len(self.q_learning_inheritance_graph)
+        })
+        
+        return base_usage
+    
 # ====================================================================
 # ========= Legacy ModuleComponent and ComponentRegistry =============
 # ====================================================================
