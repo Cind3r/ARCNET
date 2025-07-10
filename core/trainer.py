@@ -392,7 +392,8 @@ def Trainer(
         assembly_stats = assembly_registry.get_assembly_complexity_history()
         current_reuse_rate = assembly_stats[-1]['reuse_rate'] if assembly_stats else 0.0
         
-        print(f"Step {step}: Avg={avg_fitness:.3f}, Best={best_fitness:.3f}, Q-Mem={total_q_memory:.1f}MB, Q-Exp={total_q_experiences}, Reuse={current_reuse_rate:.2f}")
+        if debug:
+            print(f"Step {step}: Avg={avg_fitness:.3f}, Best={best_fitness:.3f}, Q-Mem={total_q_memory:.1f}MB, Q-Exp={total_q_experiences}, Reuse={current_reuse_rate:.2f}")
 
         # ================ 5. Q-LEARNING GUIDED SURVIVAL SELECTION ================
         # Use Q-learning influenced fitness for survival selection
