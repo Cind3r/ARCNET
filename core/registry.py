@@ -999,43 +999,43 @@ class AssemblyTrackingRegistryME(MemoryEfficientRegistry):
 # ====================================================================
 # ========= Legacy ModuleComponent and ComponentRegistry =============
 # ====================================================================
-# # Keep the original ModuleComponent for backward compatibility
-# class ModuleComponent:
-#     def __init__(self, data, parents=None, operation=None, assembly_pathway=None):
-#         self.id = uuid.uuid4().hex
-#         self.data = data
-#         self.parents = parents or []
-#         self.operation = operation
-#         self.assembly_pathway = assembly_pathway or [self.id]
-#         self.assembly_complexity = 1
+# Keep the original ModuleComponent for backward compatibility
+class ModuleComponent:
+    def __init__(self, data, parents=None, operation=None, assembly_pathway=None):
+        self.id = uuid.uuid4().hex
+        self.data = data
+        self.parents = parents or []
+        self.operation = operation
+        self.assembly_pathway = assembly_pathway or [self.id]
+        self.assembly_complexity = 1
 
-#     def copy(self, preserve_id=False):
-#         new_component = ModuleComponent(self.data.clone(), parents=self.parents, operation=self.operation, assembly_pathway=list(self.assembly_pathway))
-#         if preserve_id:
-#             new_component.id = self.id
-#         return new_component
+    def copy(self, preserve_id=False):
+        new_component = ModuleComponent(self.data.clone(), parents=self.parents, operation=self.operation, assembly_pathway=list(self.assembly_pathway))
+        if preserve_id:
+            new_component.id = self.id
+        return new_component
 
-#     def get_minimal_assembly_complexity(self, memo=None):
-#         if memo is None:
-#             memo = {}
-#         if self.id in memo:
-#             return memo[self.id]
-#         if not self.parents:
-#             memo[self.id] = 1
-#             return 1
-#         parent_complexities = [parent.get_minimal_assembly_complexity(memo) for parent in self.parents]
-#         memo[self.id] = 1 + max(parent_complexities)
-#         return memo[self.id]
+    def get_minimal_assembly_complexity(self, memo=None):
+        if memo is None:
+            memo = {}
+        if self.id in memo:
+            return memo[self.id]
+        if not self.parents:
+            memo[self.id] = 1
+            return 1
+        parent_complexities = [parent.get_minimal_assembly_complexity(memo) for parent in self.parents]
+        memo[self.id] = 1 + max(parent_complexities)
+        return memo[self.id]
 
-# # Component registry for backward compatibility
-# class ComponentRegistry:
-#     def __init__(self):
-#         self.data = {}
+# Component registry for backward compatibility
+class ComponentRegistry:
+    def __init__(self):
+        self.data = {}
     
-#     def register(self, module_id, **kwargs):
-#         self.data[module_id] = kwargs
+    def register(self, module_id, **kwargs):
+        self.data[module_id] = kwargs
     
-#     def get_assembly_complexity(self, module_id):
-#         if module_id in self.data:
-#             return self.data[module_id].get('assembly_complexity', None)
-#         return None
+    def get_assembly_complexity(self, module_id):
+        if module_id in self.data:
+            return self.data[module_id].get('assembly_complexity', None)
+        return None
