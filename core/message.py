@@ -1,6 +1,22 @@
 import torch
 import math
 from collections import defaultdict
+import contextlib
+import sys
+from io import StringIO
+
+@contextlib.contextmanager
+def suppress_print():
+    """Context manager to suppress print statements"""
+    with contextlib.redirect_stdout(StringIO()):
+        yield
+
+# Alternative function-based approach
+def with_print_suppressed(func, *args, **kwargs):
+    """Execute a function with print statements suppressed"""
+    with contextlib.redirect_stdout(StringIO()):
+        return func(*args, **kwargs)
+
 # ===========================================================
 # ================ Message Passing ==========================
 # ===========================================================
@@ -135,177 +151,178 @@ def enhanced_message_passing_with_assembly_tracking(population, step, assembly_r
     Enhanced message passing that tracks all parameter changes in the assembly system
     """
     
-    # quick method to supress printing without having to change all the function
-    if debug == False:
-        org_print = print  # Save original print function
-        def suppress_printing(*args, **kwargs):
-            pass
-        print = suppress_printing  # Override print function
+    def _run_enhanced_message_passing(population, step, assembly_registry):
+        """Internal function to run the enhanced message passing with assembly tracking"""
 
-    print(f"Step {step}: Enhanced message passing with assembly tracking for {len(population)} modules")
-    
-    # Update assembly registry step
-    assembly_registry.step_forward()
-    
-    # Phase 1: Pre-message snapshots and neighbor selection
-    module_neighbors = {}
-    message_events = {}
-    
-    for module in population:
-        # Register module if not already tracked
-        if module.id not in assembly_registry.parameter_update_history:
-            assembly_registry.register_module_initialization(module)
+        print(f"Step {step}: Enhanced message passing with assembly tracking for {len(population)} modules")
         
-        # Select manifold neighbors
-        neighbors = select_enhanced_neighbors(module, population, k=6)
-        module_neighbors[module.id] = neighbors
+        # Update assembly registry step
+        assembly_registry.step_forward()
         
-        # Update local geometry if method exists
-        if hasattr(module, 'update_local_geometry'):
-            module.update_local_geometry(neighbors)
-    
-    # Phase 2: Multi-hop message propagation with tracking
-    max_hops = max(1, int(torch.log2(torch.tensor(len(population))).item()))
-    
-    for hop in range(max_hops):
-        print(f"  Message hop {hop + 1}/{max_hops}")
-        hop_messages = {}
-        hop_influences = defaultdict(list)
+        # Phase 1: Pre-message snapshots and neighbor selection
+        module_neighbors = {}
+        message_events = {}
         
-        # Generate and send messages
         for module in population:
-            neighbors = module_neighbors[module.id]
+            # Register module if not already tracked
+            if module.id not in assembly_registry.parameter_update_history:
+                assembly_registry.register_module_initialization(module)
             
-            # Create enhanced message with assembly context
-            base_message = create_assembly_aware_message(module)
+            # Select manifold neighbors
+            neighbors = select_enhanced_neighbors(module, population, k=6)
+            module_neighbors[module.id] = neighbors
             
-            # Send to neighbors and track influences
-            for neighbor in neighbors:
-                if neighbor.id not in hop_messages:
-                    hop_messages[neighbor.id] = []
-                    hop_influences[neighbor.id] = []
-                
-                hop_messages[neighbor.id].append(base_message)
-                hop_influences[neighbor.id].append(module)
+            # Update local geometry if method exists
+            if hasattr(module, 'update_local_geometry'):
+                module.update_local_geometry(neighbors)
         
-        # Deliver messages and track parameter changes
-        for module in population:
-            if module.id in hop_messages:
-                messages = hop_messages[module.id]
-                senders = hop_influences[module.id]
+        # Phase 2: Multi-hop message propagation with tracking
+        max_hops = max(1, int(torch.log2(torch.tensor(len(population))).item()))
+        
+        for hop in range(max_hops):
+            print(f"  Message hop {hop + 1}/{max_hops}")
+            hop_messages = {}
+            hop_influences = defaultdict(list)
+            
+            # Generate and send messages
+            for module in population:
+                neighbors = module_neighbors[module.id]
                 
-                # Start tracking message influence
-                message_event = assembly_registry.track_message_passing_update(
-                    module, senders, messages
-                )
+                # Create enhanced message with assembly context
+                base_message = create_assembly_aware_message(module)
                 
-                # Process messages (this will modify module parameters)
-                if hasattr(module, 'receive_message'):
-                    for msg in messages:
-                        module.receive_message(msg)
-                
-                # Complete tracking after message processing
-                changes = assembly_registry.complete_message_passing_update(message_event, module)
-                
-                if changes['weights_changed'] or changes['position_changed']:
-                    print(f"    Module {module.id}: weights_changed={changes['weights_changed']}, "
-                          f"position_changed={changes['position_changed']}, "
-                          f"layers_affected={changes['changed_layers']}")
-    
-    # Phase 3: Process accumulated messages
-    for module in population:
-        if hasattr(module, 'process_messages'):
-            # Track before processing
-            pre_snapshot = assembly_registry.create_parameter_snapshot(module, "pre_message_processing")
-            
-            # Process messages
-            module.process_messages()
-            
-            # Track after processing
-            post_snapshot = assembly_registry.create_parameter_snapshot(module, "post_message_processing")
-            changes = assembly_registry.detect_parameter_changes(pre_snapshot, post_snapshot)
-            
-            if changes['weights_changed']:
-                # Record message processing changes
-                processing_event = {
-                    'module_id': module.id,
-                    'event_type': 'message_processing',
-                    'step': step,
-                    'changes': changes,
-                    'pre_snapshot': pre_snapshot,
-                    'post_snapshot': post_snapshot
-                }
-                assembly_registry.global_assembly_events.append({
-                    'type': 'message_processing',
-                    'step': step,
-                    'data': processing_event
-                })
-    
-    # Phase 4: Q-learning reward sharing with assembly tracking
-    top_performers = sorted(population, key=lambda m: m.fitness, reverse=True)[:len(population)//5]
-    
-    for top_performer in top_performers:
-        if (hasattr(top_performer, 'q_learning_method') and 
-            top_performer.q_learning_method == 'neural' and 
-            hasattr(top_performer, 'q_function') and
-            top_performer.q_function is not None and 
-            hasattr(top_performer.q_function, 'replay_buffer') and
-            top_performer.q_function.replay_buffer):
-            
-            neighbors = module_neighbors[top_performer.id]
-            best_experiences = sorted(top_performer.q_function.replay_buffer, 
-                                    key=lambda x: x[2], reverse=True)[:3]
-            
-            for neighbor in neighbors:
-                if (hasattr(neighbor, 'q_learning_method') and
-                    neighbor.q_learning_method == 'neural' and 
-                    hasattr(neighbor, 'q_function') and
-                    neighbor.q_function is not None):
+                # Send to neighbors and track influences
+                for neighbor in neighbors:
+                    if neighbor.id not in hop_messages:
+                        hop_messages[neighbor.id] = []
+                        hop_influences[neighbor.id] = []
                     
-                    # Track Q-learning knowledge transfer
-                    q_update_info = {
-                        'type': 'knowledge_transfer',
-                        'parent_modules': [top_performer.id],
-                        'experiences_added': len(best_experiences),
-                        'source_fitness': top_performer.fitness,
-                        'assembly_similarity': calculate_assembly_similarity(top_performer, neighbor)
+                    hop_messages[neighbor.id].append(base_message)
+                    hop_influences[neighbor.id].append(module)
+            
+            # Deliver messages and track parameter changes
+            for module in population:
+                if module.id in hop_messages:
+                    messages = hop_messages[module.id]
+                    senders = hop_influences[module.id]
+                    
+                    # Start tracking message influence
+                    message_event = assembly_registry.track_message_passing_update(
+                        module, senders, messages
+                    )
+                    
+                    # Process messages (this will modify module parameters)
+                    if hasattr(module, 'receive_message'):
+                        for msg in messages:
+                            module.receive_message(msg)
+                    
+                    # Complete tracking after message processing
+                    changes = assembly_registry.complete_message_passing_update(message_event, module)
+                    
+                    if changes['weights_changed'] or changes['position_changed']:
+                        print(f"    Module {module.id}: weights_changed={changes['weights_changed']}, "
+                            f"position_changed={changes['position_changed']}, "
+                            f"layers_affected={changes['changed_layers']}")
+        
+        # Phase 3: Process accumulated messages
+        for module in population:
+            if hasattr(module, 'process_messages'):
+                # Track before processing
+                pre_snapshot = assembly_registry.create_parameter_snapshot(module, "pre_message_processing")
+                
+                # Process messages
+                module.process_messages()
+                
+                # Track after processing
+                post_snapshot = assembly_registry.create_parameter_snapshot(module, "post_message_processing")
+                changes = assembly_registry.detect_parameter_changes(pre_snapshot, post_snapshot)
+                
+                if changes['weights_changed']:
+                    # Record message processing changes
+                    processing_event = {
+                        'module_id': module.id,
+                        'event_type': 'message_processing',
+                        'step': step,
+                        'changes': changes,
+                        'pre_snapshot': pre_snapshot,
+                        'post_snapshot': post_snapshot
                     }
-                    
-                    q_event = assembly_registry.track_q_learning_update(neighbor, q_update_info)
-                    
-                    # Perform Q-function update
-                    assembly_similarity = q_update_info['assembly_similarity']
-                    
-                    for state, action_id, target_q in best_experiences:
-                        # Weight transfer by fitness and assembly similarity
-                        fitness_ratio = top_performer.fitness / max(neighbor.fitness, 0.1)
-                        boosted_q = target_q * fitness_ratio * assembly_similarity
+                    assembly_registry.global_assembly_events.append({
+                        'type': 'message_processing',
+                        'step': step,
+                        'data': processing_event
+                    })
+        
+        # Phase 4: Q-learning reward sharing with assembly tracking
+        top_performers = sorted(population, key=lambda m: m.fitness, reverse=True)[:len(population)//5]
+        
+        for top_performer in top_performers:
+            if (hasattr(top_performer, 'q_learning_method') and 
+                top_performer.q_learning_method == 'neural' and 
+                hasattr(top_performer, 'q_function') and
+                top_performer.q_function is not None and 
+                hasattr(top_performer.q_function, 'replay_buffer') and
+                top_performer.q_function.replay_buffer):
+                
+                neighbors = module_neighbors[top_performer.id]
+                best_experiences = sorted(top_performer.q_function.replay_buffer, 
+                                        key=lambda x: x[2], reverse=True)[:3]
+                
+                for neighbor in neighbors:
+                    if (hasattr(neighbor, 'q_learning_method') and
+                        neighbor.q_learning_method == 'neural' and 
+                        hasattr(neighbor, 'q_function') and
+                        neighbor.q_function is not None):
                         
-                        neighbor.q_function.replay_buffer.append((state, action_id, boosted_q))
+                        # Track Q-learning knowledge transfer
+                        q_update_info = {
+                            'type': 'knowledge_transfer',
+                            'parent_modules': [top_performer.id],
+                            'experiences_added': len(best_experiences),
+                            'source_fitness': top_performer.fitness,
+                            'assembly_similarity': calculate_assembly_similarity(top_performer, neighbor)
+                        }
                         
-                        # Maintain buffer size
-                        if len(neighbor.q_function.replay_buffer) > neighbor.q_function.buffer_size:
-                            neighbor.q_function.replay_buffer.pop(0)
-                    
-                    # Complete Q-learning tracking
-                    changes = assembly_registry.complete_q_learning_update(q_event, neighbor)
-                    
-                    if changes['q_function_changed']:
-                        print(f"    Q-transfer: {top_performer.id} -> {neighbor.id}, "
-                              f"experiences={len(best_experiences)}, similarity={assembly_similarity:.3f}")
-    
-    # Phase 5: Report assembly statistics
-    if step % 10 == 0:  # Report every 10 steps
-        stats = assembly_registry.get_assembly_statistics()
-        print(f"Assembly Tracking Stats at Step {step}:")
-        print(f"  Components tracked: {stats['total_components']}")
-        print(f"  Modules tracked: {stats['total_modules_tracked']}")
-        print(f"  Message influences: {stats['message_influences']}")
-        print(f"  Q-learning influences: {stats['q_learning_influences']}")
-        print(f"  Max assembly depth: {stats['max_assembly_depth']}")
-        print(f"  Total assembly events: {stats['total_assembly_events']}")
+                        q_event = assembly_registry.track_q_learning_update(neighbor, q_update_info)
+                        
+                        # Perform Q-function update
+                        assembly_similarity = q_update_info['assembly_similarity']
+                        
+                        for state, action_id, target_q in best_experiences:
+                            # Weight transfer by fitness and assembly similarity
+                            fitness_ratio = top_performer.fitness / max(neighbor.fitness, 0.1)
+                            boosted_q = target_q * fitness_ratio * assembly_similarity
+                            
+                            neighbor.q_function.replay_buffer.append((state, action_id, boosted_q))
+                            
+                            # Maintain buffer size
+                            if len(neighbor.q_function.replay_buffer) > neighbor.q_function.buffer_size:
+                                neighbor.q_function.replay_buffer.pop(0)
+                        
+                        # Complete Q-learning tracking
+                        changes = assembly_registry.complete_q_learning_update(q_event, neighbor)
+                        
+                        if changes['q_function_changed']:
+                            print(f"    Q-transfer: {top_performer.id} -> {neighbor.id}, "
+                                f"experiences={len(best_experiences)}, similarity={assembly_similarity:.3f}")
+        
+        # Phase 5: Report assembly statistics
+        if step % 10 == 0:  # Report every 10 steps
+            stats = assembly_registry.get_assembly_statistics()
+            print(f"Assembly Tracking Stats at Step {step}:")
+            print(f"  Components tracked: {stats['total_components']}")
+            print(f"  Modules tracked: {stats['total_modules_tracked']}")
+            print(f"  Message influences: {stats['message_influences']}")
+            print(f"  Q-learning influences: {stats['q_learning_influences']}")
+            print(f"  Max assembly depth: {stats['max_assembly_depth']}")
+            print(f"  Total assembly events: {stats['total_assembly_events']}")
 
-    print = org_print  # Restore original print function
+    if not debug:
+        with suppress_print():
+            _run_enhanced_message_passing(population, step, assembly_registry)
+    else:
+        _run_enhanced_message_passing(population, step, assembly_registry)
+       
 
 
 def select_enhanced_neighbors(module, population, k=6):
