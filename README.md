@@ -250,12 +250,9 @@ flowchart TD
     classDef theorem fill:#333333,stroke:#ad1457,stroke-width:3px
 
 ```
-## Methods (Theory)
-
-
 ***
 ***
-## Methods:
+## Methods (Theory):
 
 #### 1. State Space Definition
 Let $\mathcal{S}$ be the system state space where each module $m_i^{(t)}$ at time $t$ is defined as:
