@@ -6,9 +6,38 @@ from datetime import datetime
 from collections import defaultdict
 
 class AssemblyTrackingRegistry:
+    
     """
     Comprehensive assembly tracking that monitors all parameter updates
-    from message passing, Q-learning, and layer weight changes
+    from message passing, Q-learning, and layer weight changes. 
+
+    Attributes:
+        - component_registry: Dictionary to track all components and their parameters.
+        - parameter_update_history: Dictionary to track all parameter updates for each module.
+        - message_influence_graph: Graph to track message passing influences between modules.
+        - q_learning_inheritance_graph: Graph to track Q-learning inheritance relationships.
+        - assembly_dependency_graph: Graph to track component dependencies in the assembly.
+        - step_counter: Counter to track the number of assembly steps.
+        - global_assembly_events: List to track all assembly events globally.
+        - complexity_history: List to track assembly complexity over time.
+    Methods:
+        - create_parameter_snapshot: Create a snapshot of module parameters for tracking.
+        - register_module_initialization: Register initial state of a module.
+        - track_message_passing_update: Track parameter updates from message passing.
+        - complete_message_passing_update: Complete tracking after message has been processed.
+        - track_q_learning_update: Track Q-learning parameter updates.
+        - complete_q_learning_update: Complete Q-learning update tracking.
+        - track_mutation_with_assembly_influence: Track mutation that incorporates message passing and Q-learning influences.
+        - detect_parameter_changes: Detect what parameters changed between snapshots.
+        - update_component_dependencies_from_message: Update component dependencies based on message passing influences.
+        - update_component_dependencies_from_q_learning: Update component dependencies based on Q-learning influences.
+        - get_component_assembly_graph: Generate a NetworkX graph of component assembly dependencies.
+        - get_assembly_statistics: Get comprehensive assembly statistics.
+        - step_forward: Advance the step counter and update complexity history.
+        - get_module_assembly_history: Get complete assembly history for a specific module.
+        - get_complexity_history: Return the history of maximal assembly complexity (depth) at each step.
+        - get_component_lineage: Get the complete lineage of a component including all influences.
+
     """
     
     def __init__(self):
@@ -33,6 +62,17 @@ class AssemblyTrackingRegistry:
             'position': getattr(module, 'position', None)
         }
         
+        # Helper functions to get snapshot parameters and data (meant just for ease of access to clarity in main file)
+        def _get_snapshot_parameters():
+            """"Displays the parameters that are being tracked"""
+            return {'timestamp', 'step', 'event_type', 'module_id', 'fitness', 'assembly_index', 'position'}
+
+        def _get_snapshot_data(param):
+            """Helper to get data from a parameter tensor"""
+            if isinstance(param, torch.Tensor):
+                return param.data.cpu().numpy().tobytes()
+            return str(param).encode()
+
         # Capture layer weights
         layer_hashes = {}
         for name, param in module.named_parameters():
@@ -322,6 +362,8 @@ class AssemblyTrackingRegistry:
                 }
                 self.component_registry[comp_id]['q_influences'].append(influence_record)
     
+    # POTENTIALLY DEPRECATED:
+    # pyvis visualization is being used separately now in another file
     def get_component_assembly_graph(self):
         """Generate a NetworkX graph of component assembly dependencies"""
         import networkx as nx
@@ -460,6 +502,8 @@ class ComponentRegistry:
         return None
 
 
+# POTENTIALLY DEPRECATED:
+# functionally a simpler version of the above, takes less into account for assembly complexity
 class ModuleComponent:
     def __init__(self, data, parents=None, operation=None, assembly_pathway=None):
         self.id = uuid.uuid4().hex  # Unique identifier
