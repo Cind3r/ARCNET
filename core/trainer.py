@@ -464,8 +464,7 @@ def Trainer(
             # all_parent_modules = [parent] + [cat for cat in catalysts if cat.id != parent.id]
             
             # Create child with assembly tracking
-            child = parent.mutate(step=step,
-                                  catalysts=catalysts,)
+            child = parent.mutate(step, catalysts)
             child.parent_id = parent.id
             
             # Register child with assembly registry, providing parent modules for reuse tracking
