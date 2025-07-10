@@ -1189,6 +1189,109 @@ class AssemblyTrackingRegistry(MemoryEfficientRegistry):
         
         return base_usage
     
+    def track_message_passing_update(self, module, senders, messages):
+        """
+        Track the start of a message passing update event.
+        Returns a message event object for tracking parameter changes.
+        """
+        # Create a pre-update snapshot
+        pre_update_snapshot = self.create_lightweight_snapshot(module, "pre_message_passing")
+        
+        # Create message event tracking object
+        message_event = {
+            'event_id': f"msg_{self.step_counter}_{module.id}_{len(self.assembly_events)}",
+            'module_id': module.id,
+            'step': self.step_counter,
+            'senders': [getattr(sender, 'id', str(sender)) for sender in senders],
+            'message_count': len(messages),
+            'pre_update_snapshot': pre_update_snapshot,
+            'post_update_snapshot': None,
+            'parameter_changes': {}
+        }
+        
+        # Store sender hashes for lightweight tracking
+        sender_hashes = []
+        for sender in senders:
+            sender_hash = self._generate_module_summary_hash(sender)
+            sender_hashes.append(sender_hash)
+            
+            # Track message influence in global graph
+            if sender_hash not in self.message_influence_graph:
+                self.message_influence_graph[sender_hash] = []
+            
+            target_hash = self._generate_module_summary_hash(module)
+            if target_hash not in self.message_influence_graph[sender_hash]:
+                self.message_influence_graph[sender_hash].append(target_hash)
+        
+        message_event['sender_hashes'] = sender_hashes
+        
+        return message_event
+    
+    def complete_message_passing_update(self, message_event, module):
+        """
+        Complete tracking of a message passing update event.
+        Compares pre and post update states and records changes.
+        """
+        # Create post-update snapshot
+        post_update_snapshot = self.create_lightweight_snapshot(module, "post_message_passing")
+        message_event['post_update_snapshot'] = post_update_snapshot
+        
+        # Compare snapshots to detect changes
+        changes = {}
+        pre_hashes = message_event['pre_update_snapshot'].get('layer_hashes', {})
+        post_hashes = post_update_snapshot.get('layer_hashes', {})
+        
+        # Detect parameter changes
+        for layer_name in pre_hashes:
+            if layer_name in post_hashes:
+                if pre_hashes[layer_name] != post_hashes[layer_name]:
+                    changes[layer_name] = {
+                        'pre_hash': pre_hashes[layer_name],
+                        'post_hash': post_hashes[layer_name],
+                        'changed': True
+                    }
+                else:
+                    changes[layer_name] = {
+                        'pre_hash': pre_hashes[layer_name],
+                        'post_hash': post_hashes[layer_name],
+                        'changed': False
+                    }
+        
+        # Check for position changes
+        pre_pos_hash = message_event['pre_update_snapshot'].get('position_hash')
+        post_pos_hash = post_update_snapshot.get('position_hash')
+        if pre_pos_hash and post_pos_hash:
+            changes['position'] = {
+                'pre_hash': pre_pos_hash,
+                'post_hash': post_pos_hash,
+                'changed': pre_pos_hash != post_pos_hash
+            }
+        
+        # Check for Q-function changes
+        pre_q_size = message_event['pre_update_snapshot'].get('q_buffer_size', 0)
+        post_q_size = post_update_snapshot.get('q_buffer_size', 0)
+        if pre_q_size != post_q_size:
+            changes['q_function'] = {
+                'pre_buffer_size': pre_q_size,
+                'post_buffer_size': post_q_size,
+                'changed': True
+            }
+        
+        message_event['parameter_changes'] = changes
+        
+        # Record the complete event
+        self.assembly_events.append({
+            'type': 'message_passing_update',
+            'step': self.step_counter,
+            'data': message_event
+        })
+        
+        # Update global tracking if components were reused through message passing
+        if any(change.get('changed', False) for change in changes.values()):
+            self.track_global_component_reuse(module)
+        
+        return changes
+    
 # ====================================================================
 # ========= Legacy ModuleComponent and ComponentRegistry =============
 # ====================================================================
