@@ -302,7 +302,7 @@ def AssemblyLineageVisualizer(best_model, lineagesnap, assembly_registry=None, f
 
     # Generate and save
     net.show(f"docs/graphs/{filename}.html")
-
+    add_graph_link_to_index(f"{filename}.html", display_name="Assembly Lineage Visualization", index_path="docs/index.html")
     print("🟢 Green = Root components | 🔴 Red = Final components | 🟣 Purple = High complexity | 🟠 Orange = Regular")
     return G, component_info, longest_paths
 
@@ -363,23 +363,48 @@ def TheoremGrapher(assembly_registry):
     plt.show()
 
 
+# index.html updater
+def add_graph_link_to_index(filename, display_name=None, index_path="index.html"):
+    """
+    Adds a new graph link to the index.html file.
+    Args:
+        filename (str): The HTML filename of the graph (e.g., "my_graph.html").
+        display_name (str, optional): The text to display for the link. Defaults to the filename without extension.
+        index_path (str): Path to the index.html file.
+    """
+    import os
 
-# POTENTIALLY DEPRECIATED 
-# class AssemblyGraph:
-#     def __init__(self):
-#         self.G = nx.DiGraph()
+    if display_name is None:
+        display_name = os.path.splitext(os.path.basename(filename))[0].replace("_", " ").title()
 
-#     def register(self, module_id, parent_ids=[]):
-#         self.G.add_node(module_id)
-#         for p in parent_ids:
-#             self.G.add_edge(p, module_id)
+    # Read the current index.html
+    with open(index_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
 
-#     def divergence_score(self, model_a_ids, model_b_ids):
-#         a_sub = self.G.subgraph(model_a_ids)
-#         b_sub = self.G.subgraph(model_b_ids)
-#         return nx.graph_edit_distance(a_sub, b_sub)
+    # Find the <ul> and </ul> lines
+    ul_start = None
+    ul_end = None
+    for i, line in enumerate(lines):
+        if "<ul>" in line:
+            ul_start = i
+        if "</ul>" in line:
+            ul_end = i
+            break
 
-#     def visualize(self, path="graph.png"):
-#         import matplotlib.pyplot as plt
-#         nx.draw(self.G, with_labels=True, node_size=300, font_size=8)
-#         plt.savefig(path)
+    if ul_start is None or ul_end is None or ul_end <= ul_start:
+        raise ValueError("Could not find <ul> section in index.html")
+
+    # Prepare the new link line
+    new_link = f'    <li><a href="graphs/{filename}" target="_blank">{display_name}</a></li>\n'
+
+    # Check if the link already exists
+    if new_link in lines:
+        print("Link already exists in index.html")
+        return
+
+    # Insert the new link before </ul>
+    lines.insert(ul_end, new_link)
+
+    # Write back the updated file
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
