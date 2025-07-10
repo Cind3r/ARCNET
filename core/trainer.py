@@ -38,7 +38,7 @@ from core.message import (
     enhanced_message_passing_with_assembly_tracking
 )
 from core.registry import (
-    AssemblyTrackingRegistry
+    AssemblyTrackingRegistryME as AssemblyTrackingRegistry
 )
 
 # This function can definitely be simplified, for now it is comprehensive and includes all the features we want to test.
