@@ -826,6 +826,7 @@ class CompactAssemblyTracker:
             'component_types': component_types
         }
 
+
 class MemoryEfficientRegistry:
     """
     Memory-efficient registry that uses the compact assembly tracker
@@ -870,6 +871,7 @@ class MemoryEfficientRegistry:
         return snapshot
     
     def register_module_initialization(self, module, parent_modules=None):
+        
         """Register module with lightweight tracking"""
         # Compute assembly index
         assembly_index, assembly_sequence = self.assembly_tracker.compute_assembly_index(
@@ -893,6 +895,26 @@ class MemoryEfficientRegistry:
         if len(self.parameter_snapshots[module.id]) > self.max_snapshots_per_module:
             self.parameter_snapshots[module.id].pop(0)
         
+        # *** ADD THIS: Register components in the component registry (for backward compatibility) ***
+        if hasattr(module, 'layer_components'):
+            for layer_name, component in module.layer_components.items():
+                comp_id = getattr(component, 'id', f"{module.id}_{layer_name}")
+                
+                # Create lightweight component registry entry
+                self.component_registry[comp_id] = {
+                    'component': component,
+                    'module_id': module.id,
+                    'layer_name': layer_name,
+                    'creation_step': self.step_counter,
+                    'creation_event': 'initialization',
+                    'parent_components': [],
+                    'derived_components': [],
+                    'assembly_complexity': getattr(component, 'assembly_complexity', 1),
+                    'original_id': comp_id,
+                    'message_influences': [],
+                    'q_influences': []
+                }
+        
         # Track assembly event
         self.assembly_events.append({
             'type': 'module_initialization',
@@ -901,7 +923,7 @@ class MemoryEfficientRegistry:
             'assembly_index': assembly_index,
             'components_count': len(self.assembly_tracker.extract_components_from_module(module))
         })
-        
+    
         return assembly_index, assembly_sequence
     
     def track_mutation_with_lightweight_inheritance(self, parent_module, child_module, catalysts=None):
