@@ -603,43 +603,439 @@ class AssemblyTrackingRegistry:
         """Get assembly statistics from the tracker"""
         return self.assembly_tracker.get_assembly_statistics()
 
-# Keep the original ModuleComponent for backward compatibility
-class ModuleComponent:
-    def __init__(self, data, parents=None, operation=None, assembly_pathway=None):
-        self.id = uuid.uuid4().hex
-        self.data = data
-        self.parents = parents or []
-        self.operation = operation
-        self.assembly_pathway = assembly_pathway or [self.id]
+
+# ====================================================================
+# ========== Lightweight Registry (above is heavy tracking) ==============
+# ====================================================================
+
+# ...existing imports...
+
+class LightweightComponent:
+    """
+    Lightweight component that tracks assembly without storing full tensor copies
+    Uses content hashes and references instead of cloning data
+    """
+    
+    def __init__(self, content_hash, component_type, source_module_id, layer_name, shape=None):
+        self.content_hash = content_hash  # Hash instead of full data
+        self.component_type = component_type
+        self.source_module_id = source_module_id
+        self.layer_name = layer_name
+        self.shape = shape  # Store shape for compatibility checks
+        self.id = f"{component_type}_{content_hash}"
+        self.assembly_step = None
+        self.parents = []  # Store parent hashes, not full components
+        self.reuse_count = 0
         self.assembly_complexity = 1
-
-    def copy(self, preserve_id=False):
-        new_component = ModuleComponent(self.data.clone(), parents=self.parents, operation=self.operation, assembly_pathway=list(self.assembly_pathway))
-        if preserve_id:
-            new_component.id = self.id
-        return new_component
-
-    def get_minimal_assembly_complexity(self, memo=None):
+    
+    def can_be_assembled_from(self, components):
+        """Simplified assembly rules based on component types"""
+        if self.component_type.startswith('weight'):
+            return any(comp.component_type.startswith('weight') for comp in components)
+        elif self.component_type == 'q_state':
+            return len(components) >= 1
+        return len(components) >= 1
+    
+    def get_assembly_complexity(self, memo=None):
+        """Calculate minimal assembly complexity"""
         if memo is None:
             memo = {}
         if self.id in memo:
             return memo[self.id]
+        
         if not self.parents:
             memo[self.id] = 1
             return 1
-        parent_complexities = [parent.get_minimal_assembly_complexity(memo) for parent in self.parents]
-        memo[self.id] = 1 + max(parent_complexities)
+        
+        # Use parent complexity without loading full parent objects
+        parent_complexity = max([memo.get(parent_id, 1) for parent_id in self.parents])
+        memo[self.id] = 1 + parent_complexity
         return memo[self.id]
 
-# Component registry for backward compatibility
-class ComponentRegistry:
+class CompactAssemblyTracker:
+    """
+    Memory-efficient assembly tracker that uses hashes and aggregated representations
+    """
+    
     def __init__(self):
-        self.data = {}
+        self.component_hashes = {}  # hash -> metadata
+        self.assembly_sequences = {}
+        self.global_assembly_step = 0
+        self.reuse_threshold = 1e-6
     
-    def register(self, module_id, **kwargs):
-        self.data[module_id] = kwargs
+    def _generate_layer_hash(self, param):
+        """Generate hash for a layer parameter without cloning"""
+        if isinstance(param, torch.Tensor):
+            # Use tensor's data_ptr and shape for lightweight hashing
+            return hashlib.md5(f"{param.data_ptr()}_{param.shape}_{param.dtype}".encode()).hexdigest()[:12]
+        return hashlib.md5(str(param).encode()).hexdigest()[:12]
     
-    def get_assembly_complexity(self, module_id):
-        if module_id in self.data:
-            return self.data[module_id].get('assembly_complexity', None)
-        return None
+    def extract_components_from_module(self, module):
+        """Extract lightweight components without cloning tensors"""
+        components = []
+        
+        # Extract layer weights as aggregated components (not row-wise)
+        for name, param in module.named_parameters():
+            if 'weight' in name or 'bias' in name:
+                content_hash = self._generate_layer_hash(param)
+                comp = LightweightComponent(
+                    content_hash=content_hash,
+                    component_type=f"{'weight' if 'weight' in name else 'bias'}_{name}",
+                    source_module_id=module.id,
+                    layer_name=name,
+                    shape=param.shape
+                )
+                components.append(comp)
+        
+        # Extract Q-function state as single component (not individual experiences)
+        if hasattr(module, 'q_function') and module.q_function is not None:
+            if hasattr(module.q_function, 'replay_buffer') and module.q_function.replay_buffer:
+                # Hash the buffer size and last few experiences as aggregate
+                buffer_summary = f"buffer_size_{len(module.q_function.replay_buffer)}"
+                if len(module.q_function.replay_buffer) >= 3:
+                    buffer_summary += f"_last_{str(module.q_function.replay_buffer[-3:])}"
+                q_hash = hashlib.md5(buffer_summary.encode()).hexdigest()[:12]
+                
+                comp = LightweightComponent(
+                    content_hash=q_hash,
+                    component_type="q_state",
+                    source_module_id=module.id,
+                    layer_name="q_function",
+                    shape=(len(module.q_function.replay_buffer),)
+                )
+                components.append(comp)
+        
+        # Extract position as single component
+        if hasattr(module, 'position'):
+            pos_hash = self._generate_layer_hash(module.position)
+            comp = LightweightComponent(
+                content_hash=pos_hash,
+                component_type="position",
+                source_module_id=module.id,
+                layer_name="position",
+                shape=module.position.shape
+            )
+            components.append(comp)
+        
+        # Extract manifold encoder as single aggregated component
+        if hasattr(module, 'manifold_encoder'):
+            manifold_hash = self._generate_module_hash(module.manifold_encoder)
+            comp = LightweightComponent(
+                content_hash=manifold_hash,
+                component_type="manifold_encoder",
+                source_module_id=module.id,
+                layer_name="manifold_encoder"
+            )
+            components.append(comp)
+        
+        return components
+    
+    def _generate_module_hash(self, module):
+        """Generate hash for entire module without parameter cloning"""
+        param_info = []
+        for name, param in module.named_parameters():
+            param_info.append(f"{name}_{param.shape}_{param.data_ptr()}")
+        return hashlib.md5("_".join(param_info).encode()).hexdigest()[:12]
+    
+    def compute_assembly_index(self, module, parent_modules=None):
+        """Compute assembly index using lightweight components"""
+        current_components = self.extract_components_from_module(module)
+        
+        # Extract components from parents without deep copying
+        available_components = []
+        if parent_modules:
+            for parent in parent_modules:
+                if hasattr(parent, 'id'):
+                    parent_components = self.extract_components_from_module(parent)
+                    available_components.extend(parent_components)
+        
+        # Find assembly sequence using hash-based matching
+        assembly_sequence = self._find_lightweight_assembly_sequence(current_components, available_components)
+        
+        # Store sequence
+        self.assembly_sequences[module.id] = assembly_sequence
+        
+        # Update component registry
+        for comp in current_components:
+            self.component_hashes[comp.id] = {
+                'component_type': comp.component_type,
+                'source_module_id': comp.source_module_id,
+                'layer_name': comp.layer_name,
+                'shape': comp.shape,
+                'reuse_count': comp.reuse_count
+            }
+        
+        return len(assembly_sequence), assembly_sequence
+    
+    def _find_lightweight_assembly_sequence(self, target_components, available_components):
+        """Find assembly sequence using hash-based component matching"""
+        assembly_sequence = []
+        reused_components = {}
+        
+        # Create hash lookup for available components
+        available_hash_map = {comp.content_hash: comp for comp in available_components}
+        
+        for target_comp in target_components:
+            # Check if component can be reused
+            if target_comp.content_hash in available_hash_map:
+                available_comp = available_hash_map[target_comp.content_hash]
+                if self._components_equivalent_lightweight(target_comp, available_comp):
+                    reused_components[target_comp.id] = available_comp.id
+                    target_comp.parents = [available_comp.id]
+                    available_comp.reuse_count += 1
+        
+        # Create assembly sequence
+        for i, comp in enumerate(target_components):
+            step_info = {
+                'step': i,
+                'component_built': comp.id,
+                'reused_from': reused_components.get(comp.id, None)
+            }
+            assembly_sequence.append(step_info)
+        
+        return assembly_sequence
+    
+    def _components_equivalent_lightweight(self, comp1, comp2):
+        """Check component equivalence using metadata"""
+        return (comp1.component_type == comp2.component_type and 
+                comp1.shape == comp2.shape and
+                comp1.content_hash == comp2.content_hash)
+    
+    def get_assembly_statistics(self):
+        """Get assembly statistics"""
+        if not self.component_hashes:
+            return {
+                'total_components': 0,
+                'reused_components': 0,
+                'average_reuse': 0.0,
+                'component_types': {}
+            }
+        
+        total_components = len(self.component_hashes)
+        reused_components = sum(1 for comp in self.component_hashes.values() if comp['reuse_count'] > 0)
+        
+        component_types = {}
+        for comp in self.component_hashes.values():
+            comp_type = comp['component_type']
+            component_types[comp_type] = component_types.get(comp_type, 0) + 1
+        
+        return {
+            'total_components': total_components,
+            'reused_components': reused_components,
+            'average_reuse': sum(comp['reuse_count'] for comp in self.component_hashes.values()) / total_components,
+            'component_types': component_types
+        }
+
+class MemoryEfficientRegistry:
+    """
+    Memory-efficient registry that uses the compact assembly tracker
+    """
+    
+    def __init__(self):
+        self.assembly_tracker = CompactAssemblyTracker()
+        self.parameter_snapshots = {}  # Store only essential snapshots
+        self.step_counter = 0
+        self.assembly_events = []
+        self.max_snapshots_per_module = 5  # Limit snapshot history
+    
+    def create_lightweight_snapshot(self, module, event_type="initialization"):
+        """Create lightweight snapshot using hashes instead of full data"""
+        snapshot = {
+            'timestamp': datetime.now(),
+            'step': self.step_counter,
+            'event_type': event_type,
+            'module_id': module.id,
+            'fitness': getattr(module, 'fitness', 0.0),
+            'assembly_index': getattr(module, 'assembly_index', 0)
+        }
+        
+        # Store only essential parameter hashes
+        layer_hashes = {}
+        for name, param in module.named_parameters():
+            if 'weight' in name or 'bias' in name:
+                layer_hashes[name] = self.assembly_tracker._generate_layer_hash(param)
+        snapshot['layer_hashes'] = layer_hashes
+        
+        # Q-function summary
+        if hasattr(module, 'q_function') and module.q_function is not None:
+            if hasattr(module.q_function, 'replay_buffer'):
+                snapshot['q_buffer_size'] = len(module.q_function.replay_buffer)
+            else:
+                snapshot['q_buffer_size'] = 0
+        
+        # Position hash
+        if hasattr(module, 'position'):
+            snapshot['position_hash'] = self.assembly_tracker._generate_layer_hash(module.position)
+        
+        return snapshot
+    
+    def register_module_initialization(self, module, parent_modules=None):
+        """Register module with lightweight tracking"""
+        # Compute assembly index
+        assembly_index, assembly_sequence = self.assembly_tracker.compute_assembly_index(
+            module, parent_modules
+        )
+        
+        # Store on module
+        module.assembly_index = assembly_index
+        module.assembly_sequence = assembly_sequence
+        
+        # Create lightweight snapshot
+        snapshot = self.create_lightweight_snapshot(module, "initialization")
+        
+        # Maintain limited snapshot history
+        if module.id not in self.parameter_snapshots:
+            self.parameter_snapshots[module.id] = []
+        
+        self.parameter_snapshots[module.id].append(snapshot)
+        
+        # Keep only recent snapshots
+        if len(self.parameter_snapshots[module.id]) > self.max_snapshots_per_module:
+            self.parameter_snapshots[module.id].pop(0)
+        
+        # Track assembly event
+        self.assembly_events.append({
+            'type': 'module_initialization',
+            'step': self.step_counter,
+            'module_id': module.id,
+            'assembly_index': assembly_index,
+            'components_count': len(self.assembly_tracker.extract_components_from_module(module))
+        })
+        
+        return assembly_index, assembly_sequence
+    
+    def track_mutation_with_lightweight_inheritance(self, parent_module, child_module, catalysts=None):
+        """Track mutation with lightweight inheritance tracking"""
+        all_parents = [parent_module]
+        if catalysts:
+            all_parents.extend(catalysts)
+        
+        # Register child with lightweight tracking
+        assembly_index, assembly_sequence = self.assembly_tracker.compute_assembly_index(
+            child_module, all_parents
+        )
+        
+        child_module.assembly_index = assembly_index
+        child_module.assembly_sequence = assembly_sequence
+        
+        # Create lightweight mutation record
+        mutation_event = {
+            'parent_id': parent_module.id,
+            'child_id': child_module.id,
+            'catalyst_ids': [c.id for c in catalysts] if catalysts else [],
+            'parent_assembly_index': getattr(parent_module, 'assembly_index', 0),
+            'child_assembly_index': assembly_index,
+            'step': self.step_counter
+        }
+        
+        self.assembly_events.append({
+            'type': 'mutation_with_assembly',
+            'step': self.step_counter,
+            'data': mutation_event
+        })
+        
+        return mutation_event
+    
+    def step_forward(self):
+        """Advance step counter"""
+        self.step_counter += 1
+        
+        # Periodic cleanup to prevent memory growth
+        if self.step_counter % 100 == 0:
+            self._cleanup_old_data()
+    
+    def _cleanup_old_data(self):
+        """Clean up old tracking data to prevent memory growth"""
+        # Remove old assembly events (keep last 1000)
+        if len(self.assembly_events) > 1000:
+            self.assembly_events = self.assembly_events[-1000:]
+        
+        # Clean up old snapshots
+        for module_id in list(self.parameter_snapshots.keys()):
+            if len(self.parameter_snapshots[module_id]) > self.max_snapshots_per_module:
+                self.parameter_snapshots[module_id] = self.parameter_snapshots[module_id][-self.max_snapshots_per_module:]
+    
+    def get_assembly_statistics(self):
+        """Get assembly statistics"""
+        return self.assembly_tracker.get_assembly_statistics()
+    
+    def get_memory_usage_estimate(self):
+        """Estimate memory usage of the registry"""
+        import sys
+        
+        total_size = 0
+        total_size += sys.getsizeof(self.assembly_tracker.component_hashes)
+        total_size += sys.getsizeof(self.parameter_snapshots)
+        total_size += sys.getsizeof(self.assembly_events)
+        
+        return {
+            'total_bytes': total_size,
+            'total_mb': total_size / (1024 * 1024),
+            'components_tracked': len(self.assembly_tracker.component_hashes),
+            'snapshots_stored': sum(len(snapshots) for snapshots in self.parameter_snapshots.values()),
+            'assembly_events': len(self.assembly_events)
+        }
+
+# Update the existing registry to use the memory-efficient version
+class AssemblyTrackingRegistryME(MemoryEfficientRegistry):
+    """
+    Drop-in replacement for the existing registry with memory optimizations
+    """
+    
+    def __init__(self):
+        super().__init__()
+        # Keep some backward compatibility
+        self.component_registry = {}
+        self.parameter_update_history = self.parameter_snapshots  # Alias for compatibility
+    
+    def create_parameter_snapshot(self, module, event_type="initialization"):
+        """Backward compatibility method"""
+        return self.create_lightweight_snapshot(module, event_type)
+    
+    def track_mutation_with_assembly_inheritance(self, parent_module, child_module, catalysts=None):
+        """Backward compatibility method"""
+        return self.track_mutation_with_lightweight_inheritance(parent_module, child_module, catalysts)
+
+# ====================================================================
+# ========= Legacy ModuleComponent and ComponentRegistry =============
+# ====================================================================
+# # Keep the original ModuleComponent for backward compatibility
+# class ModuleComponent:
+#     def __init__(self, data, parents=None, operation=None, assembly_pathway=None):
+#         self.id = uuid.uuid4().hex
+#         self.data = data
+#         self.parents = parents or []
+#         self.operation = operation
+#         self.assembly_pathway = assembly_pathway or [self.id]
+#         self.assembly_complexity = 1
+
+#     def copy(self, preserve_id=False):
+#         new_component = ModuleComponent(self.data.clone(), parents=self.parents, operation=self.operation, assembly_pathway=list(self.assembly_pathway))
+#         if preserve_id:
+#             new_component.id = self.id
+#         return new_component
+
+#     def get_minimal_assembly_complexity(self, memo=None):
+#         if memo is None:
+#             memo = {}
+#         if self.id in memo:
+#             return memo[self.id]
+#         if not self.parents:
+#             memo[self.id] = 1
+#             return 1
+#         parent_complexities = [parent.get_minimal_assembly_complexity(memo) for parent in self.parents]
+#         memo[self.id] = 1 + max(parent_complexities)
+#         return memo[self.id]
+
+# # Component registry for backward compatibility
+# class ComponentRegistry:
+#     def __init__(self):
+#         self.data = {}
+    
+#     def register(self, module_id, **kwargs):
+#         self.data[module_id] = kwargs
+    
+#     def get_assembly_complexity(self, module_id):
+#         if module_id in self.data:
+#             return self.data[module_id].get('assembly_complexity', None)
+#         return None
