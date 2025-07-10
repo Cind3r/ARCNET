@@ -157,11 +157,11 @@ def Trainer(
         pass
         
 
-    for step in range(steps):
+    for step in tqdm(range(steps), desc="Evolution Progress", unit="step"):
         # ================ 1. LOSS/FITNESS EVALUATION ================            
         assembly_registry.step_forward()  # Update assembly step
         
-        for m in population:
+        for m in tqdm(population, desc=f"Step {step} Fitness", leave=False, disable=len(population)<20):
             
             # grab current fitness if it exists, otherwise initialize to 0.0 for delta
             pre_fitness = m.fitness if hasattr(m, 'fitness') else 0.0
@@ -220,11 +220,11 @@ def Trainer(
 
         # ================ 2. Q-LEARNING UPDATES WITH ASSEMBLY TRACKING ================
         # Update Q-functions immediately after fitness evaluation
-        for m in population:
-            
-            if (m.q_learning_method == 'neural' and 
-                m.q_function is not None and 
-                m.last_state is not None and 
+        for m in tqdm(population, desc=f"Step {step} Q-Learning", leave=False, disable=len(population)<20):
+
+            if (m.q_learning_method == 'neural' and
+                m.q_function is not None and
+                m.last_state is not None and
                 m.last_action is not None):
                 
                 # Track Q-learning state before update
@@ -393,7 +393,7 @@ def Trainer(
 
         # ================ 5. Q-LEARNING GUIDED SURVIVAL SELECTION ================
         # Use Q-learning influenced fitness for survival selection
-        for m in population:
+        for m in tqdm(population, desc="Survival Selection", leave=False, disable=len(population)<20):
             # Base fitness
             survival_score = m.fitness
             
@@ -486,7 +486,7 @@ def Trainer(
             experiences_per_child = min(20, len(global_q_knowledge_pool) // len(offspring))
             
             # All children inherit from global pool
-            for i, child in enumerate(offspring):
+            for i, child in tqdm(enumerate(offspring), desc="Q-Experience Inheritance", leave=False, disable=len(offspring)<20):
                 if child.q_function is not None and experiences_per_child > 0:
                     start_idx = i * experiences_per_child
                     end_idx = start_idx + experiences_per_child
