@@ -305,6 +305,9 @@ def enhanced_message_passing_with_assembly_tracking(population, step, assembly_r
         print(f"  Max assembly depth: {stats['max_assembly_depth']}")
         print(f"  Total assembly events: {stats['total_assembly_events']}")
 
+    print = org_print  # Restore original print function
+
+
 def select_enhanced_neighbors(module, population, k=6):
     """Enhanced neighbor selection considering assembly similarity"""
     if not hasattr(module, 'position'):

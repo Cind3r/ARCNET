@@ -113,6 +113,7 @@ def monitor_prediction_diversity_with_action(population, X, y, step, max_steps=7
             print(" INTERVENTION REQUIRED: High bias detected")
         print("="*40)
     
+    print = org_print  # Restore original print function
     return bias_report
 
 def catalyst_bias_elimination(population, bias_report, elimination_rate=0.25, debug=False):
@@ -201,6 +202,7 @@ def catalyst_bias_elimination(population, bias_report, elimination_rate=0.25, de
     print(f"Catalysts: {[f'ID {cat.id} (fit:{cat.fitness:.3f})' for cat in catalysts]}")
     print(f"Population size: {len(population)} -> {len(surviving_population)}")
     
+    print = org_print  # Restore original print function
     return surviving_population, eliminated_modules
 
 def select_bias_resistant_catalysts(parent, available_cats, bias_report, max_catalysts=2):
