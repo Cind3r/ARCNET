@@ -1231,53 +1231,64 @@ class AssemblyTrackingRegistry(MemoryEfficientRegistry):
         """
         Complete tracking of a message passing update event.
         Compares pre and post update states and records changes.
+        Returns a summary dictionary with the expected keys.
         """
         # Create post-update snapshot
         post_update_snapshot = self.create_lightweight_snapshot(module, "post_message_passing")
         message_event['post_update_snapshot'] = post_update_snapshot
         
         # Compare snapshots to detect changes
-        changes = {}
+        layer_changes = {}
         pre_hashes = message_event['pre_update_snapshot'].get('layer_hashes', {})
         post_hashes = post_update_snapshot.get('layer_hashes', {})
         
         # Detect parameter changes
+        weights_changed = False
+        changed_layers = []
+        
         for layer_name in pre_hashes:
             if layer_name in post_hashes:
                 if pre_hashes[layer_name] != post_hashes[layer_name]:
-                    changes[layer_name] = {
+                    layer_changes[layer_name] = {
                         'pre_hash': pre_hashes[layer_name],
                         'post_hash': post_hashes[layer_name],
                         'changed': True
                     }
+                    weights_changed = True
+                    changed_layers.append(layer_name)
                 else:
-                    changes[layer_name] = {
+                    layer_changes[layer_name] = {
                         'pre_hash': pre_hashes[layer_name],
                         'post_hash': post_hashes[layer_name],
                         'changed': False
                     }
         
         # Check for position changes
+        position_changed = False
         pre_pos_hash = message_event['pre_update_snapshot'].get('position_hash')
         post_pos_hash = post_update_snapshot.get('position_hash')
         if pre_pos_hash and post_pos_hash:
-            changes['position'] = {
+            position_changed = pre_pos_hash != post_pos_hash
+            layer_changes['position'] = {
                 'pre_hash': pre_pos_hash,
                 'post_hash': post_pos_hash,
-                'changed': pre_pos_hash != post_pos_hash
+                'changed': position_changed
             }
         
         # Check for Q-function changes
+        q_changed = False
         pre_q_size = message_event['pre_update_snapshot'].get('q_buffer_size', 0)
         post_q_size = post_update_snapshot.get('q_buffer_size', 0)
         if pre_q_size != post_q_size:
-            changes['q_function'] = {
+            q_changed = True
+            layer_changes['q_function'] = {
                 'pre_buffer_size': pre_q_size,
                 'post_buffer_size': post_q_size,
                 'changed': True
             }
         
-        message_event['parameter_changes'] = changes
+        # Store detailed changes in the message event
+        message_event['parameter_changes'] = layer_changes
         
         # Record the complete event
         self.assembly_events.append({
@@ -1287,10 +1298,17 @@ class AssemblyTrackingRegistry(MemoryEfficientRegistry):
         })
         
         # Update global tracking if components were reused through message passing
-        if any(change.get('changed', False) for change in changes.values()):
+        if weights_changed or position_changed or q_changed:
             self.track_global_component_reuse(module)
         
-        return changes
+        # Return summary in the expected format
+        return {
+            'weights_changed': weights_changed,
+            'position_changed': position_changed,
+            'q_changed': q_changed,
+            'changed_layers': changed_layers,
+            'layer_changes': layer_changes  # Detailed changes for debugging
+        }
     
 # ====================================================================
 # ========= Legacy ModuleComponent and ComponentRegistry =============
