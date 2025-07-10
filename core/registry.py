@@ -978,7 +978,7 @@ class MemoryEfficientRegistry:
 
 
 # Update the existing registry to use the memory-efficient version
-class AssemblyTrackingRegistryME(MemoryEfficientRegistry):
+class AssemblyTrackingRegistry(MemoryEfficientRegistry):
     """
     Drop-in replacement for the existing registry with memory optimizations
     Includes global tracking system using hashes
