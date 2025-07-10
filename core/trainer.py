@@ -303,7 +303,10 @@ def Trainer(
             
         # ================ 3. MESSAGE PASSING WITH ASSEMBLY TRACKING ================
         # Now do message passing with fresh Q-learning updates
-        enhanced_message_passing_with_assembly_tracking(population, step, assembly_registry)
+        comprehensive_manifold_q_message_passing(population, step)
+
+        # Update generation statistics in assembly registry (lightweight)
+        assembly_registry.update_generation_statistics(step, population)
 
         # ================ 4. BIAS DETECTION & ELIMINATION ================
         bias_report = monitor_prediction_diversity_with_action(population, X_train, y_train, step, max_steps=steps)
