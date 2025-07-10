@@ -5,11 +5,13 @@ from collections import defaultdict
 # ================ Message Passing ==========================
 # ===========================================================
 
+
 def select_neighbors(module, population, k=3):
     distances = [(other, torch.norm(module.position.data - other.position.data)) 
                  for other in population if other.id != module.id]
     neighbors = sorted(distances, key=lambda x: x[1])[:k]
     return [n[0] for n in neighbors]
+
 
 def comprehensive_manifold_q_message_passing_old(population, step):
     for module in population:
@@ -53,6 +55,7 @@ def comprehensive_manifold_q_message_passing_old(population, step):
 
     for module in population:
         module.process_messages()
+
 
 def comprehensive_manifold_q_message_passing(population, step):
     """Message passing with O(log n) propagation guarantee"""
@@ -125,12 +128,20 @@ def q_learning_reward_sharing(population):
 # ============== Assembly Aware Messaging (NEW) ============
 # ===========================================================
 
-def enhanced_message_passing_with_assembly_tracking(population, step, assembly_registry):
+
+def enhanced_message_passing_with_assembly_tracking(population, step, assembly_registry, debug=False):
 
     """
     Enhanced message passing that tracks all parameter changes in the assembly system
     """
     
+    # quick method to supress printing without having to change all the function
+    if debug == False:
+        org_print = print  # Save original print function
+        def suppress_printing(*args, **kwargs):
+            pass
+        print = suppress_printing  # Override print function
+
     print(f"Step {step}: Enhanced message passing with assembly tracking for {len(population)} modules")
     
     # Update assembly registry step

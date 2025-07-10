@@ -98,6 +98,7 @@ def Trainer(
         - filename_base: Base filename used for saving lineage snapshots
         - best_models_history: History of best models per generation (if tracking enabled)
         - generation_stats: Statistics for each generation (if tracking enabled)
+        - assembly_registry: The complete assembly tracking registry
     """
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -109,6 +110,7 @@ def Trainer(
         best_models_history = []
         generation_stats = []
 
+    # Initialize population
     if enable_model_save:
         if load_path and os.path.exists(load_path):
             print(f"RESUMING EVOLUTION: Loading from {load_path}")
@@ -121,6 +123,10 @@ def Trainer(
                 output_dim=output_dim
             )
             print(f"Seeded population fitness: {[f'{m.fitness:.3f}' for m in population[:5]]}")
+            
+            # Register loaded modules with assembly registry
+            for m in population:
+                assembly_registry.register_module_initialization(m)
     else:
         print("STARTING FRESH EVOLUTION")
         for _ in range(initial_population):
@@ -128,6 +134,7 @@ def Trainer(
             # Initialize with consistent state
             m.get_standardized_state(population)  # Initialize state representation
             population.append(m)
+            # Register each new module with assembly registry
             assembly_registry.register_module_initialization(m)
 
     lineage_registry = {m.id: m for m in population}
@@ -194,23 +201,7 @@ def Trainer(
                     # Option 1: Simple inverse relationship
                     m.fitness = 1.0 / (1.0 + final_loss)
                     
-                    # Option 2: Alternative - exponential decay (uncomment if preferred) --> possibly better for population fitness emergence
-                    # m.fitness = np.exp(-final_loss)
-                    
-                    # Option 3: Alternative - direct accuracy-based fitness (uncomment if preferred) --> HEAVY COMPUTATIONAL OVERHEAD
-                    # try:
-                    #     with torch.no_grad():
-                    #         outputs = m(X_train)
-                    #         predictions = outputs.argmax(dim=1)
-                    #         if y_train.ndim == 2 and y_train.shape[1] > 1:
-                    #             y_train_labels = y_train.argmax(dim=1)
-                    #         else:
-                    #             y_train_labels = y_train
-                    #         accuracy = (predictions == y_train_labels).float().mean().item()
-                    #         m.fitness = accuracy
-                    # except Exception as e:
-                    #     print(f"Error computing accuracy-based fitness: {e}")
-                    #     m.fitness = 1.0 / (1.0 + final_loss)
+            # Track significant fitness changes in assembly registry
             fitness_delta = m.fitness - pre_fitness
             if abs(fitness_delta) > 0.01:
                 fitness_event = {
@@ -227,42 +218,36 @@ def Trainer(
                     'data': fitness_event
                 })
 
-        # ================ 2. Q-LEARNING UPDATES FIRST ================
+        # ================ 2. Q-LEARNING UPDATES WITH ASSEMBLY TRACKING ================
         # Update Q-functions immediately after fitness evaluation
         for m in population:
             
-            q_update_info = {
-                'experiences_added': 0,
-                'q_value_changes': [],
-                'parent_modules': []
-            }
-
-            # Grab q-learning snapshot for assembly tracking
-            if hasattr(m, 'q_function') and m.q_function is not None:
-               q_event = assembly_registry.track_q_learning_update(m, q_update_info)
-
             if (m.q_learning_method == 'neural' and 
                 m.q_function is not None and 
                 m.last_state is not None and 
                 m.last_action is not None):
+                
+                # Track Q-learning state before update
+                q_experiences_before = len(m.q_function.replay_buffer) if hasattr(m.q_function, 'replay_buffer') else 0
                 
                 # Compute enhanced reward for Q-learning
                 base_reward = compute_reward_adaptive_aan_normalized(m, X_train, y_train, 
                                             list(lineage_registry.values()), 
                                             step=step, max_steps=steps)
                 
-                # Manifold-aware reward bonus
-                #manifold_bonus = 0
-                #if m.local_tangent_space is not None:
-                #    curvature_bonus = abs(m.curvature) * 0.05
-                #    manifold_bonus = curvature_bonus
-                
-                total_reward = base_reward #+ manifold_bonus
+                total_reward = base_reward
                 next_state = [m.fitness, compute_manifold_novelty(m, list(lineage_registry.values()))]
                 
                 q_values_before = None
                 if hasattr(m.q_function, 'get_q_values'):
-                    q_values_before = deepcopy(m.q_function.get_q_values(m.last_state))  # Implement get_q_values as needed
+                    # Get the Q-values and copy them as tensors/lists without deep copying the entire structure
+                    original_q_values = m.q_function.get_q_values(m.last_state)
+                    if isinstance(original_q_values, torch.Tensor):
+                        q_values_before = original_q_values.clone().detach()
+                    elif isinstance(original_q_values, (list, tuple)):
+                        q_values_before = [float(val) for val in original_q_values]
+                    else:
+                        q_values_before = original_q_values
 
                 # Update Q-function with fresh experience
                 m.update_q(total_reward, next_state)
@@ -270,8 +255,15 @@ def Trainer(
                 # Store Q-values after update
                 q_values_after = None
                 if hasattr(m.q_function, 'get_q_values'):
-                    q_values_after = deepcopy(m.q_function.get_q_values(m.last_state))
+                    original_q_values = m.q_function.get_q_values(m.last_state)
+                    if isinstance(original_q_values, torch.Tensor):
+                        q_values_after = original_q_values.clone().detach()
+                    elif isinstance(original_q_values, (list, tuple)):
+                        q_values_after = [float(val) for val in original_q_values]
+                    else:
+                        q_values_after = original_q_values
 
+                # Track Q-value changes
                 q_value_changes = []
                 if q_values_before is not None and q_values_after is not None:
                     for action in range(len(q_values_before)):
@@ -283,34 +275,35 @@ def Trainer(
                                 'new_q': q_values_after[action]
                             })
 
-                # Track how many experiences were added (assume 1 per update)
-                experiences_added = 1 if hasattr(m.q_function, 'replay_buffer') else 0
-
-                # Optionally, track parent modules if inheriting experiences
-                parent_modules = getattr(m, 'q_inheritance_sources', [])
-
-                # Add Q-learning update info to the event
-                q_event['experiences_added'] = experiences_added
-                q_event['q_value_changes'] = q_value_changes
-                q_event['parent_modules'] = parent_modules
-
-                # Track q-learning update in the registry
-                assembly_registry.complete_q_learning_update(q_event, m)
+                # Track Q-learning update in assembly registry
+                q_experiences_after = len(m.q_function.replay_buffer) if hasattr(m.q_function, 'replay_buffer') else 0
+                if q_experiences_after > q_experiences_before or q_value_changes:
+                    q_learning_event = {
+                        'module_id': m.id,
+                        'step': step,
+                        'experiences_before': q_experiences_before,
+                        'experiences_after': q_experiences_after,
+                        'q_value_changes': q_value_changes,
+                        'reward': total_reward,
+                        'state': m.last_state,
+                        'action': m.last_action
+                    }
+                    assembly_registry.global_assembly_events.append({
+                        'type': 'q_learning_update',
+                        'step': step,
+                        'data': q_learning_event
+                    })
 
                 # Track reward history
                 if not hasattr(m, 'reward_history'):
                     m.reward_history = []
-                m.reward_history.append(m.reward)
+                m.reward_history.append(total_reward)
                 if len(m.reward_history) > 10:
                     m.reward_history.pop(0)
             
-        # ================ 3. MESSAGE PASSING  ================
+        # ================ 3. MESSAGE PASSING WITH ASSEMBLY TRACKING ================
         # Now do message passing with fresh Q-learning updates
-        #if step % 2 == 0:
-        # im assuming that this updates assemby as we pass the registry in, could not, kinda tired
         enhanced_message_passing_with_assembly_tracking(population, step, assembly_registry)
-        #else:
-        #    q_learning_reward_sharing(population)
 
         # ================ 4. BIAS DETECTION & ELIMINATION ================
         bias_report = monitor_prediction_diversity_with_action(population, X_train, y_train, step, max_steps=steps)
@@ -320,6 +313,20 @@ def Trainer(
                 # Update bias_report after elimination to tag non-biased modules
                 population, eliminated = catalyst_bias_elimination(population, bias_report)
                 bias_report = monitor_prediction_diversity_with_action(population, X_train, y_train, step, max_steps=steps)
+                
+                # Track bias elimination in assembly registry
+                if eliminated:
+                    bias_elimination_event = {
+                        'step': step,
+                        'eliminated_modules': [m.id for m in eliminated],
+                        'population_before': len(population) + len(eliminated),
+                        'population_after': len(population)
+                    }
+                    assembly_registry.global_assembly_events.append({
+                        'type': 'bias_elimination',
+                        'step': step,
+                        'data': bias_elimination_event
+                    })
                 
                 # Update lineage registry
                 for elim_mod in eliminated:
@@ -339,12 +346,12 @@ def Trainer(
                     'generation': step,
                     'rank': i + 1,
                     'fitness': float(model.fitness),
-                    'reward': float(model.reward),
-                    'assembly_index': int(model.assembly_index),
-                    'id': int(model.id),
-                    'parent_id': int(model.parent_id) if model.parent_id is not None else None,
-                    'position': model.position.data.detach().cpu().numpy().tolist(),
-                    'created_at': int(model.created_at),
+                    'reward': float(getattr(model, 'reward', 0.0)),
+                    'assembly_index': int(getattr(model, 'assembly_index', 0)),
+                    'id': model.id,
+                    'parent_id': getattr(model, 'parent_id', None),
+                    'position': model.position.data.detach().cpu().numpy().tolist() if hasattr(model, 'position') else None,
+                    'created_at': getattr(model, 'created_at', step),
                     'q_experiences': len(model.q_function.replay_buffer) if model.q_function else 0,
                     'reward_history': list(getattr(model, 'reward_history', [])),
                     
@@ -366,7 +373,7 @@ def Trainer(
                 'best_fitness': max(m.fitness for m in population),
                 'worst_fitness': min(m.fitness for m in population),
                 'fitness_std': np.std([m.fitness for m in population]),
-                'avg_assembly_index': np.mean([m.assembly_index for m in population]),
+                'avg_assembly_index': np.mean([getattr(m, 'assembly_index', 0) for m in population]),
                 'total_q_experiences': sum(len(m.q_function.replay_buffer) if m.q_function else 0 for m in population),
                 'lineage_size': len(lineage_registry)
             }
@@ -379,11 +386,13 @@ def Trainer(
         # Output step for tracking progress
         avg_fitness = sum(m.fitness for m in population) / len(population)
         best_fitness = max(m.fitness for m in population)
-        print(f"Step {step}: Avg={avg_fitness:.3f}, Best={best_fitness:.3f}, Q-Mem={total_q_memory:.1f}MB, Q-Exp={total_q_experiences}")
+        assembly_stats = assembly_registry.get_assembly_complexity_history()
+        current_reuse_rate = assembly_stats[-1]['reuse_rate'] if assembly_stats else 0.0
+        
+        print(f"Step {step}: Avg={avg_fitness:.3f}, Best={best_fitness:.3f}, Q-Mem={total_q_memory:.1f}MB, Q-Exp={total_q_experiences}, Reuse={current_reuse_rate:.2f}")
 
         # ================ 5. Q-LEARNING GUIDED SURVIVAL SELECTION ================
         # Use Q-learning influenced fitness for survival selection
-        enhanced_survivors = []
         for m in population:
             # Base fitness
             survival_score = m.fitness
@@ -400,7 +409,7 @@ def Trainer(
         # Sort by enhanced survival score
         survivors = sorted(population, key=lambda m: -m._survival_score)[:num_survivors]
         
-        # ================ 6. Q-LEARNING GUIDED REPRODUCTION ================
+        # ================ 6. Q-LEARNING GUIDED REPRODUCTION WITH ASSEMBLY TRACKING ================
         offspring = []
         consumed_modules = set()
         
@@ -447,17 +456,22 @@ def Trainer(
                         if debug:
                             print(f"  Preserving {len(cat.q_function.replay_buffer)} Q-experiences from catalyst {cat.id}")
 
-            # ================ 7. CATALYST-BASED MUTATION WITH Q-INHERITANCE ================
+            # ================ 7. CATALYST-BASED MUTATION WITH ASSEMBLY TRACKING ================
+            # Collect parent modules for assembly tracking
+            # all_parent_modules = [parent] + [cat for cat in catalysts if cat.id != parent.id]
             
+            # Create child with assembly tracking
             child = assembly_aware_mutation_with_tracking(parent, catalysts, step, assembly_registry)
-            #if hasattr(child, 'record_assembly_operation'):
-            #    child.record_assembly_operation('mutation', [parent], catalysts)
             child.parent_id = parent.id
             
+            # Register child with assembly registry, providing parent modules for reuse tracking
+            assembly_registry.track_mutation_with_assembly_inheritance(parent, child, catalysts)
+            
             # Manifold-aware position update
-            new_pos = parent.geodesic_interpolate(target.position.data, alpha=0.5)
-            new_pos += 0.05 * torch.randn(parent.manifold_dim)
-            child.position.data = new_pos.clamp(0, 1)
+            if hasattr(parent, 'position') and hasattr(target, 'position'):
+                new_pos = parent.geodesic_interpolate(target.position.data, alpha=0.5)
+                new_pos += 0.05 * torch.randn(parent.manifold_dim)
+                child.position.data = new_pos.clamp(0, 1)
             
             child.cpu()
             child.eval()
@@ -465,8 +479,6 @@ def Trainer(
             offspring.append(child)
             lineage_registry[child.id] = child
 
-            assembly_registry.register_module_initialization(child)
-        
         # ================ INHERIT Q-EXPERIENCES FROM GLOBAL POOL ================
         if global_q_knowledge_pool and offspring:
             # Sort knowledge by quality
@@ -485,9 +497,21 @@ def Trainer(
                     if len(child.q_function.replay_buffer) > child.q_function.buffer_size:
                         child.q_function.replay_buffer = child.q_function.replay_buffer[-child.q_function.buffer_size:]
                     
+                    # Track Q-inheritance in assembly registry
+                    q_inheritance_event = {
+                        'child_id': child.id,
+                        'step': step,
+                        'inherited_experiences': len(inherited_exp),
+                        'total_buffer_size': len(child.q_function.replay_buffer)
+                    }
+                    assembly_registry.global_assembly_events.append({
+                        'type': 'q_inheritance',
+                        'step': step,
+                        'data': q_inheritance_event
+                    })
+                    
                     if debug:
                         print(f"  Child {child.id} inherited {len(inherited_exp)} Q-experiences from global pool")
-
 
         # ================ 8. POPULATION UPDATE ================
         if enable_irxn:
@@ -522,25 +546,26 @@ def Trainer(
             lineage_registry = {m.id: m for m in unique_modules}
 
         # Memory management [every 10 steps clean up memory]
-        #if step % 10 == 0:
-        #    import gc; gc.collect()
+        if step % 10 == 0:
+            import gc; gc.collect()
 
-    # THEOREM CONDITIONS
-    # Check bounded fitness landscape
-    fitness_values = [m.fitness for m in population]
-    #assert all(0 <= f <= 1 for f in fitness_values), "Fitness not bounded [0,1]"
+    # Final assembly statistics
+    final_assembly_stats = assembly_registry.get_assembly_statistics()
+    complexity_history = assembly_registry.get_assembly_complexity_history()
     
-    # Check sufficient exploration (ε > 0)
-    #assert all(m.epsilon > 0 for m in population), "Insufficient exploration"
-    
-    # Check controlled bias elimination
-    eliminated_ratio = len(bias_report['biased_modules']) / len(population)
-    #assert eliminated_ratio <= 0.5, "Too aggressive bias elimination"
+    print(f"\n=== FINAL ASSEMBLY STATISTICS ===")
+    print(f"Total components tracked: {final_assembly_stats['total_components']}")
+    print(f"Reused components: {final_assembly_stats['reused_components']}")
+    print(f"Average reuse rate: {final_assembly_stats['average_reuse']:.3f}")
+    print(f"Component types: {dict(final_assembly_stats['component_types'])}")
+    print(f"Total assembly events: {len(assembly_registry.global_assembly_events)}")
     
     # Report theorem compliance
+    fitness_values = [m.fitness for m in population]
     avg_fitness = sum(fitness_values) / len(fitness_values)
     assembly_complexity = compute_system_assembly_complexity(population)
     
+    print(f"\n=== THEOREM COMPLIANCE ===")
     print(f"Fitness: {avg_fitness:.3f} ∈ [0,1] check.")
     print(f"Assembly complexity: {assembly_complexity:.3f}")
     print(f"Q-learning active: {sum(1 for m in population if m.q_function is not None)}/{len(population)}")
@@ -556,13 +581,13 @@ def Trainer(
             experiment_name=experiment_name
         )
         print(f"Exported best models to {metadata['export_files']}")
-        return population, lineage_registry, filename_base, export_files, metadata
+        return population, lineage_registry, filename_base, export_files, metadata, assembly_registry
     
     return population, lineage_registry, filename_base, best_models_history, generation_stats, assembly_registry
 
 
 # ====================================================================
-# ================ SIMPLISTIC TRAINER FUNCTION (NEW) ===========
+# ================ ENHANCED TRAINER STEP FUNCTION ==================
 # ====================================================================
 
 def enhanced_trainer_step_with_assembly_tracking(population, step, assembly_registry, X_train, y_train):
@@ -575,59 +600,16 @@ def enhanced_trainer_step_with_assembly_tracking(population, step, assembly_regi
     # Update assembly registry step
     assembly_registry.step_forward()
     
-    # Phase 1: Enhanced message passing with tracking
-    enhanced_message_passing_with_assembly_tracking(population, step, assembly_registry)
+    # Get assembly statistics for this step
+    assembly_stats = assembly_registry.get_assembly_statistics()
+    complexity_history = assembly_registry.get_assembly_complexity_history()
     
-    # Phase 2: Fitness evaluation with assembly tracking
-    for module in population:
-        pre_fitness = module.fitness
-        
-        # Compute new fitness (existing fitness computation)
-        if hasattr(module, 'compute_fitness'):
-            module.compute_fitness(X_train, y_train)
-        
-        # Track fitness changes
-        fitness_delta = module.fitness - pre_fitness
-        if abs(fitness_delta) > 0.01:  # Significant change
-            fitness_event = {
-                'module_id': module.id,
-                'event_type': 'fitness_update',
-                'step': step,
-                'pre_fitness': pre_fitness,
-                'post_fitness': module.fitness,
-                'fitness_delta': fitness_delta
-            }
-            assembly_registry.global_assembly_events.append({
-                'type': 'fitness_update',
-                'step': step,
-                'data': fitness_event
-            })
+    print(f"Assembly components: {assembly_stats['total_components']}")
+    print(f"Reused components: {assembly_stats['reused_components']}")
+    if complexity_history:
+        print(f"Current reuse rate: {complexity_history[-1]['reuse_rate']:.3f}")
     
-    # Phase 3: Selection and reproduction with assembly tracking
-    survivors = sorted(population, key=lambda m: m.fitness, reverse=True)[:len(population)//2]
-    offspring = []
+    # Continue with normal training step processing...
+    # (This function can be expanded based on your specific needs)
     
-    for parent in survivors[:len(survivors)//2]:  # Limit reproduction
-        # Select catalysts
-        available_catalysts = [m for m in population if m.id != parent.id]
-        catalysts = random.sample(available_catalysts, min(3, len(available_catalysts)))
-        
-        # Perform assembly-aware mutation
-        child = assembly_aware_mutation_with_tracking(parent, catalysts, step, assembly_registry)
-        
-        # Record assembly operation
-        if hasattr(child, 'record_assembly_operation'):
-            child.record_assembly_operation('mutation', [parent], catalysts)
-        
-        offspring.append(child)
-    
-    # Return new population
-    new_population = survivors + offspring
-    
-    # Report assembly statistics
-    stats = assembly_registry.get_assembly_statistics()
-    print(f"Assembly Stats: {stats['total_components']} components, "
-          f"{stats['message_influences']} msg influences, "
-          f"{stats['q_learning_influences']} Q influences")
-    
-    return new_population
+    return population, assembly_registry

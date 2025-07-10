@@ -11,8 +11,16 @@ import torch
 # can be used to enforce diversity and mitigate bias when it occurs. (in complex n-dimensional data spaces)
 
 
-def monitor_prediction_diversity(population, X, y, step):
+def monitor_prediction_diversity(population, X, y, step, debug=False):
     """Monitor if modules are converging to trivial solutions"""
+
+    # quick method to supress printing without having to change all the function
+    if debug == False:
+        org_print = print  # Save original print function
+        def suppress_printing(*args, **kwargs):
+            pass
+        print = suppress_printing  # Override print function
+
     if step % 3 == 0:
         print(f"\n=== Step {step} Diversity Check ===")
         for i, mod in enumerate(population[:3]):  # Check first 3
@@ -25,8 +33,16 @@ def monitor_prediction_diversity(population, X, y, step):
         print("="*40)
         
 
-def monitor_prediction_diversity_with_action(population, X, y, step, max_steps=75, bias_threshold=None):  # LOWERED from 0.85
+def monitor_prediction_diversity_with_action(population, X, y, step, max_steps=75, bias_threshold=None, debug=False):  # LOWERED from 0.85
     """Enhanced diversity monitoring that returns bias information and can trigger elimination"""
+    
+    # quick method to supress printing without having to change all the function
+    if debug == False:
+        org_print = print  # Save original print function
+        def suppress_printing(*args, **kwargs):
+            pass
+        print = suppress_printing  # Override print function
+    
     bias_report = {
         'step': step,
         'biased_modules': [],
@@ -99,9 +115,17 @@ def monitor_prediction_diversity_with_action(population, X, y, step, max_steps=7
     
     return bias_report
 
-def catalyst_bias_elimination(population, bias_report, elimination_rate=0.25):
+def catalyst_bias_elimination(population, bias_report, elimination_rate=0.25, debug=False):
+    
     """Use catalyst system to eliminate biased modules"""
     
+    # quick method to supress printing without having to change all the function
+    if debug == False:
+        org_print = print  # Save original print function
+        def suppress_printing(*args, **kwargs):
+            pass
+        print = suppress_printing  # Override print function
+
     if not bias_report['biased_modules'] or not bias_report['requires_intervention']:
         return population, []
     
