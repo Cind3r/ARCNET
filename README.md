@@ -3,9 +3,7 @@ Autocatalytic, Relativistic, Curvature, **Net**work
 
 ## Introduction
 #### Autocatalytic Abstraction Networks (AANs)
-Conventional ML systems are static learners: fixed objectives, fixed architectures, fixed inductive biases. Even AutoML, meta-learning, or neural architecture search operate within sandboxed limits. AANs instead:
-
-Continuously evolve their own internal abstractions, representations, and architectural modules through a process similar to autocatalytic chemical networks in origin-of-life theories.
+Conventional ML systems are static learners: fixed objectives, fixed architectures, fixed inductive biases. Even AutoML, meta-learning, or neural architecture search operate within sandboxed limits. AANs instead: Continuously evolve their own internal abstractions, representations, and architectural modules through a process similar to autocatalytic chemical networks in origin-of-life theories.
 
 #### On Self-Organizing Architectures
 While not explicitly autocatalytic, modern ML models learn hierarchies of abstractions:
