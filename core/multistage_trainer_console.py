@@ -73,9 +73,30 @@ def to_one_hot(labels, num_classes):
     one_hot[range(len(labels)), labels] = 1
     return one_hot
 
+# Add this helper function before saving
+def convert_to_python_type(value):
+    """Convert numpy types to native Python types for JSON serialization"""
+    try:
+        if hasattr(value, 'dtype'):
+            if 'int' in str(value.dtype):
+                return int(value)
+            elif 'float' in str(value.dtype):
+                return float(value)
+            elif 'bool' in str(value.dtype):
+                return bool(value)
+        # Handle other numpy scalar types
+        if hasattr(value, 'item'):
+            return value.item()
+        return value
+    except (ValueError, TypeError, AttributeError):
+        # Fallback to string representation if conversion fails
+        return str(value)
+
 # =========================================
 # ========== MAIN FUNCTION =============
 # =========================================
+
+
 
 def MultiStageTrain(dataset_names, norm=False, default_params=None):
     """Multi-stage training function with predefined parameters for testing purposes."""
@@ -476,17 +497,7 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
             'max_test_f1': float(overall_df['test_f1'].max())
     }
 
-# Add this helper function before saving
-    def convert_to_python_type(value):
-        """Convert numpy types to native Python types for JSON serialization"""
-        if hasattr(value, 'dtype'):
-            if 'int' in str(value.dtype):
-                return int(value)
-            elif 'float' in str(value.dtype):
-                return float(value)
-            elif 'bool' in str(value.dtype):
-                return bool(value)
-        return value
+
 
 # Save summary report with error handling
     import json
