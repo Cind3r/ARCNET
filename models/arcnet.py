@@ -8,17 +8,77 @@ from evolution.rewards import compute_manifold_novelty
 from core.registry import ModuleComponent
 from core.QModule import CompressedQModule
 from core.registry import ComponentRegistry
+from collections import defaultdict
+from typing import Dict, List, Tuple, Optional
+import hashlib
+import matplotlib.pyplot as plt
+
+# Import assembly tracking components from CASTLE.py
+class WeightMolecule:
+    """A discrete molecular unit representing a spatial region of weights"""
+    def __init__(self, atomic_weight: float, atomic_symbol: str, 
+                 position: Tuple[int, int], size: Tuple[int, int]):
+        self.atomic_weight = atomic_weight
+        self.atomic_symbol = atomic_symbol
+        self.position = position
+        self.size = size
+    
+    def __str__(self):
+        return f"{self.atomic_symbol}_{self.atomic_weight:.2f}"
+    
+    def __hash__(self):
+        return hash((self.atomic_symbol, round(self.atomic_weight, 2)))
+    
+    def __eq__(self, other):
+        return (self.atomic_symbol == other.atomic_symbol and 
+                abs(self.atomic_weight - other.atomic_weight) < 0.01)
+
+class MolecularLattice:
+    """A 2D lattice structure of weight molecules"""
+    def __init__(self, molecules: List[List[WeightMolecule]], 
+                 layer_name: str, epoch: int, lattice_id: str = None):
+        self.molecules = molecules
+        self.layer_name = layer_name
+        self.epoch = epoch
+        self.lattice_id = lattice_id or self._generate_lattice_id()
+    
+    def _generate_lattice_id(self):
+        """Generate unique ID based on molecular composition"""
+        molecule_string = ""
+        for row in self.molecules:
+            for mol in row:
+                molecule_string += str(mol)
+        return hashlib.md5(molecule_string.encode()).hexdigest()[:8]
+    
+    def get_molecular_formula(self):
+        """Get chemical-like formula for the lattice"""
+        molecule_counts = defaultdict(int)
+        for row in self.molecules:
+            for mol in row:
+                molecule_counts[mol.atomic_symbol] += 1
+        
+        formula = ""
+        for symbol, count in sorted(molecule_counts.items()):
+            if count > 1:
+                formula += f"{symbol}{count}"
+            else:
+                formula += symbol
+        return formula
 
 class ConceptModule(nn.Module):
     
     """
-    ConceptModule: A neural module for concept learning with enhanced Q-learning and manifold-aware components.
+    ConceptModule: A neural module for concept learning with enhanced Q-learning, manifold-aware components,
+    and molecular assembly tracking capabilities.
+    
     This module includes: 
     - A neural network for concept representation
     - An enhanced Q-learning system with neural Q-function
     - Manifold learning components for geometric understanding
     - Messaging system for inter-module communication
     - Assembly properties for autocatalytic behavior
+    - Molecular assembly tracking from CASTLE.py
+    - Assembly statistics and analysis capabilities
     - Fitness and reward tracking
     - Mutation capabilities for evolutionary adaptation
     - Comprehensive message passing with Q-learning inheritance
@@ -31,64 +91,17 @@ class ConceptModule(nn.Module):
     - increase_spread (bool): Whether to increase the spread of the module's position in the manifold (default is False).
     - q_learning_method (str): Method for Q-learning ('neural' for neural Q-function, 'table' for traditional Q-table).
     - manifold_dim (int): Dimension of the manifold representation (default is None, which will be set based on input_dim).
-
-    Attributes:
-    - fc1, fc2, fc3: Fully connected layers for the neural network.
-    - act1, act2: Activation functions (ReLU).
-    - dropout: Dropout layer for regularization.
-    - q_function: Neural Q-function for enhanced Q-learning.
-    - q_table: Traditional Q-table for fallback Q-learning.
-    - position: Learnable parameter representing the module's position in the manifold.
-    - manifold_encoder: Encoder for mapping input features to manifold representation.
-    - curvature_predictor: Predictor for estimating curvature in the manifold.
-    - local_tangent_space: Estimated local tangent space for geodesic computations.
-    - curvature: Estimated curvature of the manifold.
-    - message_buffer: Buffer for incoming messages from other modules.
-    - gate: Learnable parameter for gating messages.
-    - last_input, last_hidden: Store the last input and hidden state for message processing.
-    - is_autocatalytic: Flag indicating if the module is autocatalytic.
-    - assembly_steps: Number of assembly steps this module has undergone.
-    - catalyzed_by: List of module IDs that catalyzed this module.
-    - catalyzes: List of module IDs that this module catalyzes.
-    - assembly_index: Index of this module in the assembly process.
-    - copy_number: Number of copies of this module in the population.
-    - assembly_pathway: Pathway of assembly steps leading to this module.
-    - position_info: Dictionary containing position-related information (step, novelty score, reward value).
-
-    Methods:
-    - forward: Forward pass through the neural network.
-    - update_manifold_position: Updates the module's position in the manifold based on input data.
-    - geodesic_interpolate: Interpolates along the geodesic path in the manifold.
-    - manifold_distance: Computes the geodesic distance to another position in the manifold.
-    - receive_message: Receives and processes messages from other modules.
-    - process_messages: Processes all received messages and returns a combined tensor.
-    - forward_summary: Generates a summary of the module's state for message passing.
-    - choose_action: Selects an action based on the current state and available targets using Q-learning.
-    - update_q: Updates the Q-values based on the received reward and next state.
-    - mutate: Mutates the module by perturbing weights and position, inheriting Q-learning experiences from catalysts.
-    - compute_assembly_index: Computes the assembly index for this module.
-    - get_assembly_complexity_contribution: Calculates this module's contribution to system complexity.
-    - build_lineage_graph: Builds a lineage graph of the module's ancestry.
-    - set_reward: Sets the reward value for this module.
-    - set_novelty_score: Sets the novelty score for this module.
-    - get_best_reward: Returns the best reward achieved by this module.
-    - get_q_memory_usage: Returns the memory usage of the Q-learning system (neural or table).
-
+    - molecule_size (int): Size of molecular units for assembly tracking (default is 2).
+    - weight_precision (int): Precision for weight molecule tracking (default is 3).
     """
     def __init__(self, input_dim, hidden_dim, output_dim=2, created_at=0, increase_spread=False,
-                  q_learning_method='neural', manifold_dim=None):
+                  q_learning_method='neural', manifold_dim=None, molecule_size=2, weight_precision=3):
         super().__init__()
         
-
         # ==========================================================
         # ================ Neural Network Layers ===================
         # ==========================================================
-
-        # Originally set as nn.Sequential, but now using individual layers for flexibility
-        # potentially add more layers or change activation functions later (TanH works well
-        # for biological models, Sigmoid for binary classification, etc.) 
         
-        # This needs to be made more flexible in the future
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.act1 = nn.ReLU()
         self.dropout = nn.Dropout(0.1)
@@ -96,6 +109,8 @@ class ConceptModule(nn.Module):
         self.act2 = nn.ReLU()
         self.fc3 = nn.Linear(hidden_dim // 2, output_dim)
 
+        # ==========================================================
+        # ================ Basic Properties ========================
         # ==========================================================
 
         # Basic properties
@@ -106,7 +121,6 @@ class ConceptModule(nn.Module):
         self.parent_id = None
         self.created_at = created_at
 
-        
         # Fitness and reward
         self.fitness = 0.0
         self.reward = 0.0
@@ -118,6 +132,51 @@ class ConceptModule(nn.Module):
             'novelty_score': 0.0,
             'reward_value': 0.0,
         }
+
+        # ==========================================================
+        # ================ Molecular Assembly Tracking =============
+        # ==========================================================
+        
+        # Assembly tracking parameters
+        self.molecule_size = molecule_size
+        self.weight_precision = weight_precision
+        
+        # Assembly structures
+        self.atomic_library = set()  # All unique molecules discovered
+        self.lattice_library = {}    # All lattice structures by ID
+        self.assembly_pathways = {}  # How lattices are assembled
+        self.assembly_indices = {}   # Assembly complexity of each lattice
+        
+        # Tracking
+        self.layer_lattices = defaultdict(list)  # Lattices per layer over time
+        self.epoch_data = []
+        
+        # Reuse tracking
+        self.molecule_reuse = defaultdict(set)  # Which lattices use each molecule
+        self.lattice_reuse = defaultdict(list)  # Temporal reuse of lattices
+        
+        # Define atomic symbols based on weight magnitudes
+        self.atomic_symbols = {
+            'Ze': (0.0, 0.01),      # Zero-like
+            'Sm': (0.01, 0.1),      # Small
+            'Md': (0.1, 0.5),       # Medium
+            'Lg': (0.5, 1.0),       # Large
+            'Xl': (1.0, 2.0),       # Extra Large
+            'Xx': (2.0, float('inf'))  # Extreme
+        }
+        
+        # Molecular statistics tracking
+        self.molecular_evolution_stats = {
+            'total_molecules_discovered': 0,
+            'unique_lattices_created': 0,
+            'assembly_complexity_evolution': [],
+            'molecular_reuse_patterns': {},
+            'complexity_rewards': []
+        }
+
+        # ==========================================================
+        # ================ Q-Learning System =======================
+        # ==========================================================
 
         # STANDARDIZED state representation
         self.state_dim = 4  # [fitness, novelty, assembly_complexity, manifold_curvature]
@@ -146,6 +205,10 @@ class ConceptModule(nn.Module):
         self.last_input = None
         self.last_hidden = None
 
+        # ==========================================================
+        # ================ Assembly Properties =====================
+        # ==========================================================
+
         # Assembly properties
         self.is_autocatalytic = False
         self.assembly_steps = 0
@@ -159,9 +222,12 @@ class ConceptModule(nn.Module):
             'fc3': ModuleComponent(self.fc3.weight.data.clone())
         }
         self.assembly_pathway = [self.layer_components['fc1'], self.layer_components['fc2'], self.layer_components['fc3']]
-
         self.assembly_operations = [] # Track actual operations to construct this module
         self.minimal_construction_path = []  # Shortest path to construct
+
+        # ==========================================================
+        # ================ Manifold Components =====================
+        # ==========================================================
 
         # QISRL Manifold Components
         if manifold_dim is None:
@@ -190,9 +256,273 @@ class ConceptModule(nn.Module):
             weight_decay=1e-5
         )
 
-        
+    # ==========================================================
+    # ================ Molecular Assembly Methods ==============
+    # ==========================================================
 
-    # Initialize the module's position
+    def weight_to_atomic_symbol(self, weight: float) -> str:
+        """Convert weight magnitude to atomic symbol"""
+        abs_weight = abs(weight)
+        
+        for symbol, (min_val, max_val) in self.atomic_symbols.items():
+            if min_val <= abs_weight < max_val:
+                return symbol + ('+' if weight >= 0 else '-')
+        
+        return 'Xx' + ('+' if weight >= 0 else '-')
+    
+    def tensor_to_molecular_lattice(self, weight_tensor: torch.Tensor, layer_name: str, epoch: int):# -> MolecularLattice:
+        """Convert weight tensor to molecular lattice structure"""
+        if len(weight_tensor.shape) != 2:
+            raise ValueError("Only 2D weight tensors supported")
+        
+        weights = weight_tensor.detach().cpu().numpy()
+        rows, cols = weights.shape
+        
+        # Calculate lattice dimensions
+        lattice_rows = rows // self.molecule_size
+        lattice_cols = cols // self.molecule_size
+        
+        molecules = []
+        
+        for i in range(lattice_rows):
+            molecule_row = []
+            for j in range(lattice_cols):
+                # Extract nxn region
+                start_row = i * self.molecule_size
+                end_row = start_row + self.molecule_size
+                start_col = j * self.molecule_size
+                end_col = start_col + self.molecule_size
+                
+                region = weights[start_row:end_row, start_col:end_col]
+                
+                # Calculate molecular properties
+                atomic_weight = np.mean(region)
+                atomic_symbol = self.weight_to_atomic_symbol(atomic_weight)
+                
+                molecule = WeightMolecule(
+                    atomic_weight=round(atomic_weight, self.weight_precision),
+                    atomic_symbol=atomic_symbol,
+                    position=(i, j),
+                    size=(self.molecule_size, self.molecule_size)
+                )
+                
+                molecule_row.append(molecule)
+                self.atomic_library.add(molecule)
+            
+            molecules.append(molecule_row)
+        
+        return MolecularLattice(
+            molecules=molecules,
+            layer_name=layer_name,
+            epoch=epoch,
+            lattice_id=None
+        )
+    
+    def find_assembly_pathway(self, target_lattice: MolecularLattice):# -> Optional[List[str]]:
+        """Find how target lattice can be assembled from existing components"""
+        target_molecules = set()
+        for row in target_lattice.molecules:
+            for mol in row:
+                target_molecules.add(mol)
+        
+        # Find existing lattices that could contribute molecules
+        pathway = []
+        remaining_molecules = target_molecules.copy()
+        
+        # Sort available lattices by how many molecules they can contribute
+        available_lattices = list(self.lattice_library.values())
+        lattice_contributions = []
+        
+        for lattice in available_lattices:
+            if lattice.lattice_id == target_lattice.lattice_id:
+                continue
+            
+            lattice_molecules = set()
+            for row in lattice.molecules:
+                for mol in row:
+                    lattice_molecules.add(mol)
+            
+            contribution = len(lattice_molecules & remaining_molecules)
+            if contribution > 0:
+                lattice_contributions.append((lattice, contribution, lattice_molecules))
+        
+        # Greedily select lattices that contribute most molecules
+        lattice_contributions.sort(key=lambda x: x[1], reverse=True)
+        
+        for lattice, contribution, lattice_molecules in lattice_contributions:
+            if remaining_molecules & lattice_molecules:
+                pathway.append(f"reuse_lattice({lattice.lattice_id})")
+                remaining_molecules -= lattice_molecules
+            
+            if not remaining_molecules:
+                break
+        
+        # Add any remaining molecules as atomic components
+        for mol in remaining_molecules:
+            pathway.append(f"atomic_molecule({mol.atomic_symbol})")
+        
+        return pathway if pathway else None
+
+    def calculate_assembly_index(self, lattice: MolecularLattice):# -> int:
+        """Calculate assembly complexity of a lattice"""
+        if lattice.lattice_id in self.assembly_indices:
+            return self.assembly_indices[lattice.lattice_id]
+        
+        # Get assembly pathway
+        pathway = self.find_assembly_pathway(lattice)
+        
+        if not pathway:
+            # New lattice with no reusable components
+            unique_molecules = set()
+            for row in lattice.molecules:
+                for mol in row:
+                    unique_molecules.add(mol)
+            assembly_index = len(unique_molecules)
+        else:
+            # Count reused components and atomic additions
+            reused_lattices = sum(1 for step in pathway if step.startswith('reuse_lattice'))
+            atomic_additions = sum(1 for step in pathway if step.startswith('atomic_molecule'))
+            
+            # Assembly index = number of assembly steps
+            assembly_index = reused_lattices + atomic_additions
+        
+        self.assembly_indices[lattice.lattice_id] = assembly_index
+        return assembly_index
+    
+    def track_molecule_reuse(self, lattice: MolecularLattice):
+        """Track which molecules are reused across lattices"""
+        for row in lattice.molecules:
+            for mol in row:
+                self.molecule_reuse[mol].add(lattice.lattice_id)
+    
+    def track_molecular_epoch(self, epoch: int):
+        """Track molecular lattice structures for this module in an epoch"""
+        epoch_data = {
+            'epoch': epoch,
+            'layer_lattices': {},
+            'new_lattices': [],
+            'assembly_stats': {}
+        }
+        
+        assembly_indices = []
+        
+        # Process each layer's weights
+        for name, param in [('fc1', self.fc1.weight), ('fc2', self.fc2.weight), ('fc3', self.fc3.weight)]:
+            if len(param.shape) == 2:
+                # Convert to molecular lattice
+                lattice = self.tensor_to_molecular_lattice(param, name, epoch)
+                
+                # Store in library
+                self.lattice_library[lattice.lattice_id] = lattice
+                
+                # Find assembly pathway
+                pathway = self.find_assembly_pathway(lattice)
+                if pathway:
+                    self.assembly_pathways[lattice.lattice_id] = pathway
+                
+                # Calculate assembly index
+                assembly_index = self.calculate_assembly_index(lattice)
+                assembly_indices.append(assembly_index)
+                
+                # Track reuse
+                self.track_molecule_reuse(lattice)
+                self.layer_lattices[name].append(lattice.lattice_id)
+                self.lattice_reuse[lattice.lattice_id].append(epoch)
+                
+                # Store epoch data
+                epoch_data['layer_lattices'][name] = {
+                    'lattice_id': lattice.lattice_id,
+                    'molecular_formula': lattice.get_molecular_formula(),
+                    'assembly_index': assembly_index,
+                    'pathway': pathway
+                }
+                
+                epoch_data['new_lattices'].append({
+                    'layer': name,
+                    'lattice_id': lattice.lattice_id,
+                    'molecular_formula': lattice.get_molecular_formula(),
+                    'assembly_index': assembly_index
+                })
+        
+        # Calculate epoch statistics
+        epoch_data['assembly_stats'] = {
+            'total_lattices': len(epoch_data['new_lattices']),
+            'avg_assembly_index': np.mean(assembly_indices) if assembly_indices else 0,
+            'max_assembly_index': max(assembly_indices) if assembly_indices else 0,
+            'total_molecules': len(self.atomic_library),
+            'total_lattices_library': len(self.lattice_library)
+        }
+        
+        self.epoch_data.append(epoch_data)
+        
+        # Update molecular evolution stats
+        self.molecular_evolution_stats['total_molecules_discovered'] = len(self.atomic_library)
+        self.molecular_evolution_stats['unique_lattices_created'] = len(self.lattice_library)
+        self.molecular_evolution_stats['assembly_complexity_evolution'].append(
+            epoch_data['assembly_stats']['avg_assembly_index']
+        )
+        
+        # Calculate complexity reward
+        complexity_reward = self._calculate_complexity_reward(epoch_data['assembly_stats']['avg_assembly_index'])
+        self.molecular_evolution_stats['complexity_rewards'].append(complexity_reward)
+        
+        return epoch_data
+
+    def _calculate_complexity_reward(self, assembly_complexity: float):# -> float:
+        """Calculate reward based on assembly complexity (can be positive or negative)"""
+        # Reward moderate complexity, penalize excessive complexity
+        optimal_complexity = 5.0
+        if assembly_complexity <= optimal_complexity:
+            return assembly_complexity / optimal_complexity  # 0 to 1
+        else:
+            # Penalize excessive complexity
+            excess = assembly_complexity - optimal_complexity
+            return max(0.1, 1.0 - (excess * 0.1))  # Decrease reward for high complexity
+
+    def compute_assembly_gradient_modifier(self, lattice: MolecularLattice, original_grad: torch.Tensor) -> torch.Tensor:
+        """Modify gradients based on molecular assembly complexity"""
+        modifier = torch.ones_like(original_grad)
+        
+        # Get assembly properties
+        assembly_index = self.calculate_assembly_index(lattice)
+        
+        # Convert lattice back to tensor positions
+        for i, molecule_row in enumerate(lattice.molecules):
+            for j, molecule in enumerate(molecule_row):
+                # Calculate position in original tensor
+                start_row = i * self.molecule_size
+                end_row = start_row + self.molecule_size
+                start_col = j * self.molecule_size
+                end_col = start_col + self.molecule_size
+                
+                # Assembly-based modification
+                if len(self.molecule_reuse[molecule]) > 1:
+                    # Reduce updates for reused molecules (preserve learned patterns)
+                    modifier[start_row:end_row, start_col:end_col] *= 0.5
+                elif molecule.atomic_symbol.startswith('Ze'):
+                    # Encourage sparsity for zero-like weights
+                    modifier[start_row:end_row, start_col:end_col] *= 1.2
+                elif assembly_index > 5:
+                    # Reduce learning rate for complex assemblies
+                    modifier[start_row:end_row, start_col:end_col] *= 0.8
+        
+        return modifier
+
+    def get_molecular_assembly_summary(self):# -> Dict:
+        """Get comprehensive summary of molecular assembly state"""
+        return {
+            'total_molecules': len(self.atomic_library),
+            'total_lattices': len(self.lattice_library),
+            'assembly_pathways': len(self.assembly_pathways),
+            'molecular_reuse_count': len([mol for mol, lattices in self.molecule_reuse.items() if len(lattices) > 1]),
+            'average_assembly_complexity': np.mean(list(self.assembly_indices.values())) if self.assembly_indices else 0,
+            'evolution_stats': self.molecular_evolution_stats
+        }
+
+    # ==========================================================
+    # ================ Original Methods (Modified) =============
+    # ==========================================================
+
     def update_manifold_position(self, x):
         if not self.position_initialized:
             with torch.no_grad():
@@ -234,7 +564,6 @@ class ConceptModule(nn.Module):
         out = self.fc3(h2)
         return out
 
-    # NOTE: Consider removal of geodesic as complexity becomes too large and computationally expensive
     def geodesic_interpolate(self, target_pos, alpha=0.5):
         """Interpolate along geodesic path"""
         if self.local_tangent_space is None:
@@ -249,7 +578,6 @@ class ConceptModule(nn.Module):
         geodesic_step = alpha * tangent_proj
         new_pos = self.position.data + torch.matmul(geodesic_step, self.local_tangent_space.T)
         return new_pos.clamp(0, 1)
-
 
     def manifold_distance(self, other_pos):
         # Always compute Euclidean as baseline
@@ -275,7 +603,6 @@ class ConceptModule(nn.Module):
             return geodesic_dist
         except Exception:
             return euclidean_dist
-
 
     def update_local_geometry(self, neighbors):
         """Estimate local tangent space and curvature"""
@@ -310,9 +637,9 @@ class ConceptModule(nn.Module):
             self.local_tangent_space = None
             self.curvature = 0.0
 
-    # =========================================================
+    # ==========================================================
     # ================ Messaging and Q-learning =================
-    # =========================================================
+    # ==========================================================
     def receive_message(self, message):
         """ENHANCED message receiving with comprehensive Q-learning transfer"""
         self.message_buffer.append(message)
@@ -335,11 +662,8 @@ class ConceptModule(nn.Module):
                     if avg_sender_reward > 0.7:  # High-performing neighbor
                         self._boost_q_values(boost_factor=1.1)
 
-
     def process_messages(self):
-        """
-        Process all received messages - for ComprehensiveMessage objects
-        """
+        """Process all received messages - for ComprehensiveMessage objects"""
         if not self.message_buffer:
             return None
         
@@ -401,25 +725,26 @@ class ConceptModule(nn.Module):
             self.message_buffer = []
             return torch.zeros(self.hidden_dim // 2)
 
-
     def forward_summary(self):
-        """ENHANCED forward summary with Q-learning AND reward data"""
+        """ENHANCED forward summary with Q-learning, molecular assembly, AND reward data"""
         base_summary = (self.last_hidden.mean(dim=0) if self.last_hidden is not None 
                        else torch.zeros(self.hidden_dim))
         
-        # CREATE COMPREHENSIVE MESSAGE
+        # CREATE COMPREHENSIVE MESSAGE WITH MOLECULAR DATA
         if (self.q_learning_method == 'neural' and 
             self.q_function is not None):
             
             class ComprehensiveMessage:
                 def __init__(self, summary, q_experiences, reward_history, fitness, 
-                           manifold_position, assembly_index):
+                           manifold_position, assembly_index, molecular_summary):
                     self.data = summary
+                    self.content = summary  # For backward compatibility
                     self.q_experiences = q_experiences
                     self.reward_history = reward_history
                     self.fitness = fitness
                     self.manifold_position = manifold_position
                     self.assembly_index = assembly_index
+                    self.molecular_summary = molecular_summary
                     
                 def __mul__(self, other):
                     return ComprehensiveMessage(
@@ -428,9 +753,11 @@ class ConceptModule(nn.Module):
                         self.reward_history,
                         self.fitness,
                         self.manifold_position,
-                        self.assembly_index
+                        self.assembly_index,
+                        self.molecular_summary
                     )
                 
+                @property
                 def shape(self):
                     return self.data.shape
                 
@@ -441,7 +768,8 @@ class ConceptModule(nn.Module):
                         self.reward_history,
                         self.fitness,
                         self.manifold_position,
-                        self.assembly_index
+                        self.assembly_index,
+                        self.molecular_summary
                     )
             
             # Collect comprehensive data for message
@@ -450,6 +778,7 @@ class ConceptModule(nn.Module):
                           else self.q_function.replay_buffer)
             
             reward_hist = getattr(self, 'reward_history', [self.reward])
+            molecular_summary = self.get_molecular_assembly_summary()
             
             return ComprehensiveMessage(
                 base_summary, 
@@ -457,23 +786,26 @@ class ConceptModule(nn.Module):
                 reward_hist,
                 self.fitness,
                 self.position.data.detach().cpu().numpy().tolist(),
-                self.assembly_index
+                self.assembly_index,
+                molecular_summary
             )
         
         return base_summary
 
     def get_standardized_state(self, population):
-        """ALWAYS return consistent 4D state vector"""
+        """ALWAYS return consistent 4D state vector including molecular complexity"""
         try:
             fitness = float(self.fitness)
             novelty = float(compute_manifold_novelty(self, population))
-            assembly_complexity = float(self.assembly_index) / 10.0  # Normalized
+            # Include molecular assembly complexity in state
+            molecular_complexity = len(self.atomic_library) / 100.0  # Normalized molecular count
+            assembly_complexity = float(self.assembly_index) / 10.0  # Normalized assembly index
+            combined_complexity = (molecular_complexity + assembly_complexity) / 2.0
             manifold_curvature = float(self.curvature)
             
-            return [fitness, novelty, assembly_complexity, manifold_curvature]
+            return [fitness, novelty, combined_complexity, manifold_curvature]
         except Exception:
             return [0.0, 0.0, 0.0, 0.0]  # Fallback state
-
 
     def choose_action(self, population, available_targets, epsilon=0.1):
         """Enhanced action selection with neural Q-function"""
@@ -499,14 +831,19 @@ class ConceptModule(nn.Module):
         self.last_action = action.id % self.action_space_size
         return action
         
-
     def update_q(self, reward, population, alpha=None, gamma=None):
-        """Enhanced Q-update with consistent state transitions"""
+        """Enhanced Q-update with consistent state transitions and molecular complexity"""
         if alpha is None: alpha = self.alpha
         if gamma is None: gamma = self.gamma
         
         if self.last_state is None or self.last_action is None:
             return
+        
+        # Add molecular complexity reward to base reward
+        complexity_reward = self._calculate_complexity_reward(
+            len(self.atomic_library) + self.assembly_index
+        )
+        combined_reward = reward + 0.1 * complexity_reward  # Weight molecular contribution
         
         # Consistent next state
         next_state = self.get_standardized_state(population)
@@ -519,15 +856,14 @@ class ConceptModule(nn.Module):
                 next_q_values = self.q_function.get_q_values_batch(next_state, sample_actions)
                 next_max_q = max(next_q_values) if next_q_values else 0.0
                 
-                target_q = reward + gamma * next_max_q
+                target_q = combined_reward + gamma * next_max_q
                 self.q_function.update_q_network(self.last_state, self.last_action, target_q)
                 
             except Exception:
                 # Fallback: simple target
                 print("Warning: Q-function update failed, using fallback.")
-                self.q_function.update_q_network(self.last_state, self.last_action, reward)
+                self.q_function.update_q_network(self.last_state, self.last_action, combined_reward)
     
-
     def _boost_q_values(self, boost_factor=1.1):
         """Boost Q-values based on successful neighbors"""
         if (self.q_learning_method == 'neural' and 
@@ -540,7 +876,6 @@ class ConceptModule(nn.Module):
                 boosted_q = target_q * boost_factor
                 self.q_function.replay_buffer[i] = (state, action_id, boosted_q)
 
-
     def get_q_memory_usage(self):
         """Get Q-learning memory usage"""
         if self.q_learning_method == 'neural' and self.q_function is not None:
@@ -548,20 +883,20 @@ class ConceptModule(nn.Module):
         else:
             # Estimate traditional Q-table memory
             return len(self.q_table) * 200 / (1024 * 1024)  # Rough estimate in MB
-    
 
     # ==========================================================
-    # ================ Neural Network Methods ==================
+    # ================ Enhanced Mutation with Molecular Tracking
     # ==========================================================
-    # mutate function to perturb weights and position
+
     def mutate(self, current_step=0, catalysts=None):
-        """ENHANCED mutation with Q-learning inheritance from ALL catalysts"""
+        """ENHANCED mutation with Q-learning inheritance and molecular assembly tracking"""
         if catalysts is None:
             catalysts = [self]
 
         new_mod = ConceptModule(
             self.input_dim, self.hidden_dim, self.output_dim,
-            created_at=current_step, q_learning_method=self.q_learning_method
+            created_at=current_step, q_learning_method=self.q_learning_method,
+            molecule_size=self.molecule_size, weight_precision=self.weight_precision
         )   
         
         new_mod.id = random.randint(0, int(1e6))
@@ -574,12 +909,19 @@ class ConceptModule(nn.Module):
         if not hasattr(new_mod, 'reward_history'):
             new_mod.reward_history = []
 
+        # INHERIT MOLECULAR ASSEMBLY KNOWLEDGE
+        new_mod.atomic_library = self.atomic_library.copy()
+        new_mod.lattice_library = self.lattice_library.copy()
+        new_mod.assembly_pathways = self.assembly_pathways.copy()
+        new_mod.assembly_indices = self.assembly_indices.copy()
+        new_mod.molecular_evolution_stats = self.molecular_evolution_stats.copy()
+
         # COMPREHENSIVE Q-LEARNING INHERITANCE
         if self.q_learning_method == 'neural' and self.q_function is not None:
             new_mod.q_function = CompressedQModule(
                 state_dim=self.q_function.state_dim,
                 action_embedding_dim=self.q_function.action_embedding_dim,
-                hidden_dim=self.q_function.hidden_dim # Same hidden dimension as parent
+                hidden_dim=self.q_function.hidden_dim
             )
             
             # Copy parent Q-network weights
@@ -599,8 +941,10 @@ class ConceptModule(nn.Module):
                     # Collect experiences from each catalyst
                     catalyst_exp = catalyst.q_function.replay_buffer
                     if catalyst_exp:
-                        # Weight experiences by catalyst fitness
-                        weighted_exp = [(state, action_id, target_q * catalyst.fitness) 
+                        # Weight experiences by catalyst fitness and molecular complexity
+                        molecular_bonus = len(catalyst.atomic_library) / 100.0
+                        weight_factor = catalyst.fitness + molecular_bonus
+                        weighted_exp = [(state, action_id, target_q * weight_factor) 
                                       for state, action_id, target_q in catalyst_exp]
                         all_experiences.extend(weighted_exp)
                     
@@ -613,8 +957,6 @@ class ConceptModule(nn.Module):
                 all_experiences.sort(key=lambda x: x[2], reverse=True)
                 selected_exp = all_experiences[:new_mod.q_function.buffer_size//2]
                 new_mod.q_function.replay_buffer = selected_exp
-              
-                #print(f"Child {new_mod.id} inherited {len(selected_exp)} weighted Q-experiences from {len(catalysts)} catalysts")
             
             # Initialize reward history tracking
             new_mod.reward_history = catalyst_rewards[:10]  # Keep recent rewards
@@ -628,62 +970,52 @@ class ConceptModule(nn.Module):
                 if param.requires_grad and 'q_function' not in str(param):
                     param.add_(0.01 * torch.randn_like(param))
 
-        # Assembly tracking
+        # Assembly tracking with molecular components
         new_mod.assembly_steps = max([c.assembly_steps for c in catalysts]) + 1
-        new_mod.assembly_index = new_mod.assembly_steps
+        new_mod.compute_assembly_index() 
         new_mod.catalyzed_by = [c.id for c in catalysts]
-        # When mutating, create new ModuleComponent for mutated weights
+        
+        # Create new ModuleComponent for mutated weights with molecular tracking
         for name, layer in [('fc1', new_mod.fc1), ('fc2', new_mod.fc2), ('fc3', new_mod.fc3)]:
-            # Get the mutated weight from the new module (already mutated by load_state_dict + parameter mutation)
             mutated_weight = layer.weight.data.clone()
-            parent_component = self.layer_components[name]  # Get parent component from SELF
+            parent_component = self.layer_components[name]
             new_component = ModuleComponent(mutated_weight, parents=[parent_component], operation='mutation')
-            new_mod.layer_components[name] = new_component  # Assign to NEW module
+            new_mod.layer_components[name] = new_component
         
         # Update assembly pathway for new module
         new_mod.assembly_pathway = [new_mod.layer_components['fc1'], new_mod.layer_components['fc2'], new_mod.layer_components['fc3']]
+
+        # Track molecular evolution in the new module
+        try:
+            new_mod.track_molecular_epoch(current_step)
+        except Exception as e:
+            print(f"Warning: Could not track molecular evolution for new module: {e}")
 
         for c in catalysts:
             c.catalyzes.append(new_mod.id)
         
         return new_mod
-    
+
     # ==========================================================
-    # ================ Simplified Assembly Tracking ==============
+    # ================ Assembly Tracking Methods ===============
     # ==========================================================
 
-    """
-    Something in this section is deprecated, and needs to be removed. Tracking system
-    complexity is more difficult than I thought. 
-    """
-    
-    #def compute_assembly_index(self):
-    #    """Compute assembly index A(m_i) = a_i"""
-    #    self.assembly_index = self.assembly_steps
-    #    return self.assembly_index
-    
-    #def get_assembly_complexity_contribution(self, total_population):
-    #    """Calculate this module's contribution to system complexity"""
-    #    # A(S) = Σ e^(a_i) * (n_i - 1) / N_T
-    #    return math.exp(self.assembly_index) * (self.copy_number - 1) / total_population
-    
-    
     def record_assembly_operation(self, operation_type, parent_modules, catalysts):
-        """Record operations for true Assembly Theory"""
+        """Record operations for true Assembly Theory with molecular tracking"""
         operation = {
             'type': operation_type,  # 'mutation', 'crossover', 'catalysis'
             'inputs': [m.id for m in parent_modules],
             'catalysts': [c.id for c in catalysts],
-            'step': getattr(self, 'created_at', 0)
+            'step': getattr(self, 'created_at', 0),
+            'molecular_state': self.get_molecular_assembly_summary()
         }
         self.assembly_operations.append(operation)
         
         # Update assembly index
         self.compute_assembly_index()
 
-    # POTENTIALLY DEPRECATED:
     def get_assembly_complexity_contribution(self, population):
-        """Corrected system complexity following theorem"""
+        """Corrected system complexity following theorem with molecular components"""
         if not population:
             return 0.0
         
@@ -691,59 +1023,115 @@ class ConceptModule(nn.Module):
         total_population = len(population)
         
         for module in population:
-            # A(S) = Σ e^(a_i) * (n_i - 1) / N_T
+            # A(S) = Σ e^(a_i) * (n_i - 1) / N_T with molecular complexity
             a_i = module.compute_assembly_index()  # True assembly index
+            molecular_complexity = len(module.atomic_library) / 10.0  # Normalized molecular contribution
+            combined_complexity = a_i + molecular_complexity
             n_i = getattr(module, 'copy_number', 1)  # Number of copies
             
-            contribution = math.exp(a_i) * (n_i - 1) / total_population
+            contribution = math.exp(combined_complexity) * (n_i - 1) / total_population
             total_complexity += contribution
         
         return total_complexity
 
     def get_assembly_complexity(self):
-        """
-        Returns a dict with per-layer and total assembly complexity.
-        """
+        """Returns a dict with per-layer, molecular, and total assembly complexity."""
         complexities = {}
         total = 0
+        
+        # Layer-wise complexity
         for name, comp in self.layer_components.items():
             complexity = comp.get_minimal_assembly_complexity()
             complexities[name] = complexity
             total += complexity
         
-        complexities['total'] = total
+        # Molecular complexity
+        molecular_complexity = len(self.atomic_library)
+        lattice_complexity = len(self.lattice_library)
+        
+        complexities['molecular'] = molecular_complexity
+        complexities['lattice'] = lattice_complexity
+        complexities['total'] = total + molecular_complexity + lattice_complexity
+        
         return complexities
 
     def compute_assembly_index(self):
-        """
-        Computes the assembly index for this module as the sum of per-layer complexities.
-        This represents the total assembly complexity of all components.
-        """
+        """Computes the assembly index including molecular assembly complexity"""
         total_complexity = 0
+        
+        # Layer component complexity
         for name, component in self.layer_components.items():
             total_complexity += component.get_minimal_assembly_complexity()
+        
+        # Molecular assembly complexity
+        total_complexity += len(self.atomic_library) * 0.1  # Weight molecular contribution
+        total_complexity += len(self.lattice_library) * 0.2  # Weight lattice contribution
         
         self.assembly_index = total_complexity
         return self.assembly_index
 
     # ==========================================================
+    # ================ Analysis Methods ========================
+    # ==========================================================
+
+    def print_molecular_analysis(self):
+        """Print comprehensive molecular assembly analysis"""
+        print("=== MOLECULAR LATTICE ASSEMBLY ANALYSIS ===")
+        print(f"Module ID: {self.id}")
+        print(f"Total unique molecules discovered: {len(self.atomic_library)}")
+        print(f"Total lattice structures: {len(self.lattice_library)}")
+        print(f"Lattices with assembly pathways: {len(self.assembly_pathways)}")
+        
+        # Show molecular library
+        molecules_by_symbol = defaultdict(list)
+        for mol in self.atomic_library:
+            molecules_by_symbol[mol.atomic_symbol].append(mol)
+        
+        print(f"\nMolecular library (by atomic symbol):")
+        for symbol, molecules in sorted(molecules_by_symbol.items()):
+            print(f"  {symbol}: {len(molecules)} variants")
+        
+        # Most complex lattices
+        if self.assembly_indices:
+            print(f"\n=== MOST COMPLEX LATTICES ===")
+            complex_lattices = sorted(self.assembly_indices.items(), 
+                                    key=lambda x: x[1], reverse=True)[:3]
+            
+            for lattice_id, assembly_index in complex_lattices:
+                if lattice_id in self.lattice_library:
+                    lattice = self.lattice_library[lattice_id]
+                    print(f"Lattice {lattice_id}: Assembly Index {assembly_index}")
+                    print(f"  Layer: {lattice.layer_name}, Epoch: {lattice.epoch}")
+                    print(f"  Molecular Formula: {lattice.get_molecular_formula()}")
+                    
+                    if lattice_id in self.assembly_pathways:
+                        print(f"  Assembly Pathway: {self.assembly_pathways[lattice_id]}")
+                    print()
+
+        # Reuse analysis
+        print("=== MOLECULAR REUSE ANALYSIS ===")
+        highly_reused_molecules = {mol: lattices for mol, lattices in self.molecule_reuse.items()
+                                if len(lattices) > 1}
+        print(f"Molecules reused across lattices: {len(highly_reused_molecules)}")
+        
+        temporally_reused_lattices = {lid: epochs for lid, epochs in self.lattice_reuse.items()
+                                    if len(epochs) > 1}
+        print(f"Lattices reused across epochs: {len(temporally_reused_lattices)}")
+
+    # ==========================================================
     # ====================== Other Methods =====================
     # ==========================================================
 
-    # Reward tracker
     def set_reward(self, reward):
         self.reward = reward
         self.position_info['reward_value'] = reward
     
-    # novelty score tracker
     def set_novelty_score(self, novelty_score):
         self.position_info['novelty_score'] = novelty_score
 
-    # best reward
     def get_best_reward(self):
         return getattr(self, 'best_reward', None)
 
-    # I dont remember what this is for tbh
     def hashable_op(self, op):
         # Convert lists in op to tuples for hashing
         return tuple(
@@ -751,16 +1139,13 @@ class ConceptModule(nn.Module):
             for k, v in sorted(op.items())
         )
 
-    # get position in data space
     def get_position(self):
         return self.position.data.detach().numpy()    
-    
-    # ==================== END OF CLASS =====================
 
 
 def system_assembly_complexity(population):
     """
-    Computes system assembly complexity as in the notebook formula.
+    Computes system assembly complexity including molecular components.
     population: list of ConceptModule instances
     """
     from collections import Counter
