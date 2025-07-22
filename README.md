@@ -409,7 +409,7 @@ Where:
 For each module $m_i$, select neighbors by manifold distance: 
 
 $$
-\mathcal{N}_{\mathcal{M}}(m_i) = \{m_j : d_{\mathcal{M}}(\mathbf{p}_i, \mathbf{p}_j) \text{ among } k \text{ smallest}\}
+\mathcal{N}\_{\mathcal{M}}(m_i) = \{m_j : d_{\mathcal{M}}(\mathbf{p}_i, \mathbf{p}_j) \text{ among } k \text{ smallest}\}
 $$
 
 Where:  
@@ -420,7 +420,7 @@ Where:
 Information propagates via manifold-aware messaging: 
 
 $$
-\mathbf{M}\_i^{(t)} = \sigma(g_i) \cdot \frac{1}{|\mathcal{N}_{\mathcal{M}}(m_i)|} \sum_{j \in \mathcal{N}_{\mathcal{M}}(m_i)} \frac{\mathbf{h}_j^{(t-1)}}{1 + d_{\mathcal{M}}(\mathbf{p}_i, \mathbf{p}_j)}
+\mathbf{M}\_i^{(t)} = \sigma(g_i) \cdot \frac{1}{|\mathcal{N}\_{\mathcal{M}}(m_i)|} \sum_{j \in \mathcal{N}\_{\mathcal{M}}(m_i)} \frac{\mathbf{h}\_j^{(t-1)}}{1 + d_{\mathcal{M}}(\mathbf{p}_i, \mathbf{p}_j)}
 $$
 
 Where:  
