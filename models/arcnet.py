@@ -1173,6 +1173,479 @@ class ConceptModule(nn.Module):
             'operations_performed': len(self.assembly_operations)
         }
 
+        # ==========================================================
+    # ================ Missing Methods - Updated for Assembly Theory ========================
+    # ==========================================================
+    
+    def _boost_q_values(self, boost_factor=1.1):
+        """Boost Q-values based on successful neighbors - Updated for Assembly Theory"""
+        if self.q_learning_method == 'neural' and self.q_function is not None:
+            try:
+                # Boost recent successful experiences in replay buffer
+                for i in range(-min(5, len(self.q_function.replay_buffer)), 0):
+                    state, action_id, target_q = self.q_function.replay_buffer[i]
+                    if target_q > 0:  # Only boost positive experiences
+                        boosted_q = target_q * boost_factor
+                        self.q_function.replay_buffer[i] = (state, action_id, boosted_q)
+                
+                # Record this as an assembly operation
+                self.record_assembly_operation(
+                    'q_value_boost',
+                    [f"q_experiences_{self.id}"],
+                    f"boosted_q_{self.id}_{len(self.assembly_operations)}"
+                )
+                
+                print(f"Module {self.id}: Boosted Q-values by factor {boost_factor}")
+            except Exception as e:
+                print(f"Warning: Q-value boost failed for module {self.id}: {e}")
+    
+    def get_q_memory_usage(self):
+        """Get Q-learning memory usage with Assembly Theory tracking"""
+        if self.q_learning_method == 'neural' and self.q_function is not None:
+            memory_stats = {
+                'replay_buffer_size': len(self.q_function.replay_buffer),
+                'buffer_capacity': self.q_function.buffer_size,
+                'memory_utilization': len(self.q_function.replay_buffer) / self.q_function.buffer_size,
+                'q_network_parameters': sum(p.numel() for p in self.q_function.parameters()),
+                'total_q_experiences_stored': len(self.q_function.replay_buffer),
+                'assembly_related_experiences': 0  # Count assembly-related experiences
+            }
+            
+            # Count experiences from assembly operations
+            for exp in self.q_function.replay_buffer:
+                state, action_id, target_q = exp
+                # Check if this experience relates to assembly operations
+                if len(state) >= 3 and state[2] > 0:  # Assembly complexity in state
+                    memory_stats['assembly_related_experiences'] += 1
+            
+            return memory_stats
+        else:
+            return {
+                'replay_buffer_size': 0,
+                'buffer_capacity': 0,
+                'memory_utilization': 0.0,
+                'q_network_parameters': 0,
+                'total_q_experiences_stored': 0,
+                'assembly_related_experiences': 0
+            }
+    
+    def set_reward(self, reward):
+        """Set reward value with Assembly Theory complexity consideration"""
+        self.reward = reward
+        self.position_info['reward_value'] = reward
+        
+        # Update best reward tracking
+        if reward > self.best_reward:
+            self.best_reward = reward
+        
+        # Initialize reward history if not exists
+        if not hasattr(self, 'reward_history'):
+            self.reward_history = []
+        
+        # Add assembly complexity factor to reward
+        complexity_factor = self._calculate_complexity_reward(self.true_assembly_index)
+        adjusted_reward = reward * complexity_factor
+        
+        self.reward_history.append({
+            'raw_reward': reward,
+            'adjusted_reward': adjusted_reward,
+            'complexity_factor': complexity_factor,
+            'assembly_index': self.true_assembly_index,
+            'step': self.created_at
+        })
+        
+        # Keep only recent reward history
+        if len(self.reward_history) > 20:
+            self.reward_history = self.reward_history[-20:]
+        
+        # Record reward setting as assembly operation
+        reward_component_id = f"reward_{self.id}_{len(self.reward_history)}"
+        reward_component = AssemblyComponent(
+            component_id=reward_component_id,
+            component_type='operation',
+            data={'reward': reward, 'adjusted_reward': adjusted_reward, 'complexity_factor': complexity_factor},
+            assembly_steps=1,
+            parents=[],
+            operation='reward_assignment'
+        )
+        
+        self.my_components[reward_component_id] = reward_component
+        self.assembly_tracker.register_component(reward_component, self.generation)
+    
+    def set_novelty_score(self, novelty_score):
+        """Set novelty score with Assembly Theory integration"""
+        self.position_info['novelty_score'] = novelty_score
+        
+        # Initialize novelty history if not exists
+        if not hasattr(self, 'novelty_history'):
+            self.novelty_history = []
+        
+        # Assembly-aware novelty calculation
+        # Higher assembly complexity can contribute to novelty
+        assembly_novelty_bonus = min(0.2, self.true_assembly_index / 50.0)
+        enhanced_novelty = novelty_score + assembly_novelty_bonus
+        
+        self.novelty_history.append({
+            'raw_novelty': novelty_score,
+            'enhanced_novelty': enhanced_novelty,
+            'assembly_bonus': assembly_novelty_bonus,
+            'assembly_index': self.true_assembly_index,
+            'step': self.created_at
+        })
+        
+        # Keep only recent novelty history
+        if len(self.novelty_history) > 15:
+            self.novelty_history = self.novelty_history[-15:]
+        
+        # Record novelty as assembly operation
+        novelty_component_id = f"novelty_{self.id}_{len(self.novelty_history)}"
+        novelty_component = AssemblyComponent(
+            component_id=novelty_component_id,
+            component_type='operation',
+            data={'novelty': novelty_score, 'enhanced_novelty': enhanced_novelty, 'assembly_bonus': assembly_novelty_bonus},
+            assembly_steps=1,
+            parents=[],
+            operation='novelty_assignment'
+        )
+        
+        self.my_components[novelty_component_id] = novelty_component
+        self.assembly_tracker.register_component(novelty_component, self.generation)
+    
+    def get_best_reward(self):
+        """Get best reward achieved with Assembly Theory context"""
+        if hasattr(self, 'reward_history') and self.reward_history:
+            # Find best reward considering both raw and adjusted rewards
+            best_raw = max(entry['raw_reward'] for entry in self.reward_history)
+            best_adjusted = max(entry['adjusted_reward'] for entry in self.reward_history)
+            best_entry = max(self.reward_history, key=lambda x: x['adjusted_reward'])
+            
+            return {
+                'best_raw_reward': best_raw,
+                'best_adjusted_reward': best_adjusted,
+                'best_reward_context': best_entry,
+                'total_rewards_received': len(self.reward_history),
+                'current_assembly_index': self.true_assembly_index
+            }
+        else:
+            return {
+                'best_raw_reward': self.best_reward,
+                'best_adjusted_reward': self.best_reward,
+                'best_reward_context': None,
+                'total_rewards_received': 0,
+                'current_assembly_index': self.true_assembly_index
+            }
+    
+    def hashable_op(self, op):
+        """Convert operations to hashable format for Assembly Theory tracking"""
+        if isinstance(op, dict):
+            # Handle assembly operations
+            if 'type' in op and 'inputs' in op:
+                op_type = op['type']
+                inputs = tuple(sorted(op['inputs'])) if isinstance(op['inputs'], list) else op['inputs']
+                output = op.get('output', 'unknown')
+                catalysts = tuple(sorted(op.get('catalysts', [])))
+                return f"{op_type}:{inputs}→{output}:{catalysts}"
+            else:
+                # General dict hashing
+                items = tuple(sorted(op.items()))
+                return str(hash(items))
+        elif isinstance(op, (list, tuple)):
+            return str(hash(tuple(str(item) for item in op)))
+        elif hasattr(op, 'component_id'):
+            # AssemblyComponent
+            return f"comp:{op.component_id}:{op.component_type}:{op.operation}"
+        elif hasattr(op, 'lattice_id'):
+            # MolecularLattice
+            return f"lattice:{op.lattice_id}:{op.layer_name}"
+        else:
+            return str(hash(str(op)))
+    
+    def get_position(self):
+        """Get position in data space with Assembly Theory context"""
+        position_data = self.position.data.detach().cpu().numpy()
+        
+        return {
+            'manifold_position': position_data.tolist(),
+            'manifold_dimension': self.manifold_dim,
+            'position_initialized': self.position_initialized,
+            'curvature': self.curvature,
+            'generation': self.generation,
+            'assembly_index': self.true_assembly_index,
+            'position_history': getattr(self, 'position_history', []),
+            'local_geometry_available': self.local_tangent_space is not None
+        }
+    
+    def get_assembly_complexity_contribution(self, population):
+        """Calculate module's contribution to system complexity using Assembly Theory"""
+        if not population:
+            return 0.0
+        
+        # Calculate this module's relative contribution to system assembly complexity
+        total_system_assembly = sum(getattr(mod, 'true_assembly_index', 1) for mod in population)
+        my_contribution = self.true_assembly_index / total_system_assembly if total_system_assembly > 0 else 0.0
+        
+        # Factor in reusable components
+        available_components = self.assembly_tracker.get_available_components(self.generation)
+        reusable_count = sum(1 for comp in self.my_components.values() 
+                           if comp.component_id in available_components)
+        
+        # Calculate reusability factor
+        total_components = len(self.my_components)
+        reusability_factor = reusable_count / total_components if total_components > 0 else 0.0
+        
+        # Enhanced contribution considering Assembly Theory
+        complexity_contribution = {
+            'raw_contribution': my_contribution,
+            'assembly_index': self.true_assembly_index,
+            'total_system_assembly': total_system_assembly,
+            'reusable_components': reusable_count,
+            'total_components': total_components,
+            'reusability_factor': reusability_factor,
+            'effective_contribution': my_contribution * (1 + reusability_factor),
+            'complexity_efficiency': self.true_assembly_index / max(1, total_components),
+            'generation_factor': 1.0 / max(1, self.generation),  # Earlier generations are more fundamental
+            'weighted_contribution': my_contribution * (1 + reusability_factor) * (1.0 / max(1, self.generation))
+        }
+        
+        # Record complexity analysis as assembly operation
+        analysis_id = f"complexity_analysis_{self.id}_{len(self.assembly_operations)}"
+        analysis_component = AssemblyComponent(
+            component_id=analysis_id,
+            component_type='operation',
+            data=complexity_contribution,
+            assembly_steps=1,
+            parents=[],
+            operation='complexity_analysis'
+        )
+        
+        self.my_components[analysis_id] = analysis_component
+        self.assembly_tracker.register_component(analysis_component, self.generation)
+        
+        return complexity_contribution
+    
+    def build_lineage_graph(self):
+        """Build lineage graph with Assembly Theory component tracking"""
+        lineage_data = {
+            'module_id': self.id,
+            'generation': self.generation,
+            'parent_id': self.parent_id,
+            'parent_modules': [p.id for p in self.parent_modules] if self.parent_modules else [],
+            'created_at': self.created_at,
+            'assembly_lineage': [],
+            'component_inheritance': {},
+            'catalytic_relationships': {
+                'catalyzed_by': self.catalyzed_by,
+                'catalyzes': self.catalyzes
+            }
+        }
+        
+        # Track assembly component lineage
+        for comp_id, component in self.my_components.items():
+            component_lineage = {
+                'component_id': comp_id,
+                'component_type': component.component_type,
+                'assembly_steps': component.assembly_steps,
+                'operation': component.operation,
+                'parents': [p.component_id for p in component.parents],
+                'assembly_pathway': component.get_assembly_pathway()
+            }
+            lineage_data['assembly_lineage'].append(component_lineage)
+        
+        # Track component inheritance from parents
+        if self.parent_modules:
+            for parent in self.parent_modules:
+                if hasattr(parent, 'my_components'):
+                    inherited_components = []
+                    for comp_id, comp in parent.my_components.items():
+                        # Check if we inherited or reused this component
+                        if any(my_comp.component_id == comp_id or comp in my_comp.parents 
+                              for my_comp in self.my_components.values()):
+                            inherited_components.append({
+                                'component_id': comp_id,
+                                'component_type': comp.component_type,
+                                'inherited_from': parent.id
+                            })
+                    
+                    if inherited_components:
+                        lineage_data['component_inheritance'][parent.id] = inherited_components
+        
+        # Add construction pathway
+        lineage_data['construction_pathway'] = self.construction_pathway
+        lineage_data['minimal_assembly_steps'] = self.minimal_assembly_steps
+        lineage_data['true_assembly_index'] = self.true_assembly_index
+        
+        return lineage_data
+    
+    def visualize_lattice_evolution(self, save_path=None, show_plot=True):
+        """Visualize molecular lattice evolution over time"""
+        if not self.epoch_data:
+            print("No epoch data available for visualization")
+            return None
+        
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+            
+            # Extract data for visualization
+            epochs = [data['epoch'] for data in self.epoch_data]
+            assembly_indices = [data['assembly_stats']['avg_assembly_index'] for data in self.epoch_data]
+            total_molecules = [data['assembly_stats']['total_molecules'] for data in self.epoch_data]
+            total_lattices = [data['assembly_stats']['total_lattices_library'] for data in self.epoch_data]
+            
+            # Create subplots
+            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
+            fig.suptitle(f'Molecular Lattice Evolution - Module {self.id}', fontsize=16)
+            
+            # Plot 1: Assembly Index Evolution
+            ax1.plot(epochs, assembly_indices, 'b-o', linewidth=2, markersize=4)
+            ax1.set_title('Average Assembly Index Over Time')
+            ax1.set_xlabel('Epoch')
+            ax1.set_ylabel('Assembly Index')
+            ax1.grid(True, alpha=0.3)
+            
+            # Plot 2: Molecular Discovery
+            ax2.plot(epochs, total_molecules, 'g-s', linewidth=2, markersize=4)
+            ax2.set_title('Total Unique Molecules Discovered')
+            ax2.set_xlabel('Epoch')
+            ax2.set_ylabel('Molecule Count')
+            ax2.grid(True, alpha=0.3)
+            
+            # Plot 3: Lattice Library Growth
+            ax3.plot(epochs, total_lattices, 'r-^', linewidth=2, markersize=4)
+            ax3.set_title('Lattice Library Growth')
+            ax3.set_xlabel('Epoch')
+            ax3.set_ylabel('Total Lattices')
+            ax3.grid(True, alpha=0.3)
+            
+            # Plot 4: Assembly Efficiency (molecules reused)
+            if len(epochs) > 1:
+                reuse_efficiency = []
+                for data in self.epoch_data:
+                    total_mols = data['assembly_stats']['total_molecules']
+                    total_lats = data['assembly_stats']['total_lattices_library']
+                    efficiency = total_mols / max(1, total_lats)  # Molecules per lattice
+                    reuse_efficiency.append(efficiency)
+                
+                ax4.plot(epochs, reuse_efficiency, 'm-d', linewidth=2, markersize=4)
+                ax4.set_title('Molecular Reuse Efficiency')
+                ax4.set_xlabel('Epoch')
+                ax4.set_ylabel('Molecules per Lattice')
+                ax4.grid(True, alpha=0.3)
+            else:
+                ax4.text(0.5, 0.5, 'Insufficient data\nfor efficiency plot', 
+                        ha='center', va='center', transform=ax4.transAxes, fontsize=12)
+                ax4.set_title('Molecular Reuse Efficiency')
+            
+            plt.tight_layout()
+            
+            if save_path:
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                print(f"Lattice evolution plot saved to {save_path}")
+            
+            if show_plot:
+                plt.show()
+            
+            return fig
+            
+        except ImportError:
+            print("Matplotlib not available. Cannot create visualization.")
+            return None
+        except Exception as e:
+            print(f"Error creating lattice evolution visualization: {e}")
+            return None
+    
+    def print_molecular_analysis(self):
+        """Print comprehensive molecular assembly analysis"""
+        print("=== MOLECULAR ASSEMBLY ANALYSIS ===")
+        print(f"Module ID: {self.id}, Generation: {self.generation}")
+        print(f"Molecule Size: {self.molecule_size}x{self.molecule_size}")
+        print(f"Weight Precision: {self.weight_precision}")
+        
+        print(f"\nMolecular Library:")
+        print(f"  Total Unique Molecules: {len(self.atomic_library)}")
+        print(f"  Total Lattice Structures: {len(self.lattice_library)}")
+        
+        if self.atomic_library:
+            # Analyze molecular composition
+            symbol_counts = defaultdict(int)
+            for molecule in self.atomic_library:
+                base_symbol = molecule.atomic_symbol[:-1]  # Remove +/- suffix
+                symbol_counts[base_symbol] += 1
+            
+            print(f"  Molecular Composition:")
+            for symbol, count in sorted(symbol_counts.items()):
+                percentage = (count / len(self.atomic_library)) * 100
+                print(f"    {symbol}: {count} ({percentage:.1f}%)")
+        
+        print(f"\nMolecular Reuse Patterns:")
+        reused_molecules = [mol for mol, lattices in self.molecule_reuse.items() if len(lattices) > 1]
+        print(f"  Reused Molecules: {len(reused_molecules)}")
+        print(f"  Reuse Efficiency: {len(reused_molecules) / max(1, len(self.atomic_library)) * 100:.1f}%")
+        
+        if reused_molecules:
+            print(f"  Top Reused Molecules:")
+            sorted_reuse = sorted([(mol, len(lattices)) for mol, lattices in self.molecule_reuse.items()], 
+                                key=lambda x: x[1], reverse=True)
+            for mol, reuse_count in sorted_reuse[:5]:
+                print(f"    {mol}: used in {reuse_count} lattices")
+        
+        print(f"\nAssembly Evolution:")
+        if self.epoch_data:
+            latest_stats = self.epoch_data[-1]['assembly_stats']
+            print(f"  Latest Average Assembly Index: {latest_stats['avg_assembly_index']:.2f}")
+            print(f"  Latest Max Assembly Index: {latest_stats['max_assembly_index']}")
+            print(f"  True Assembly Index: {latest_stats['true_assembly_index']}")
+            
+            if len(self.epoch_data) > 1:
+                improvement = (self.epoch_data[-1]['assembly_stats']['avg_assembly_index'] - 
+                             self.epoch_data[0]['assembly_stats']['avg_assembly_index'])
+                print(f"  Assembly Index Improvement: {improvement:.2f}")
+        
+        print(f"\nMolecular Evolution Stats:")
+        stats = self.molecular_evolution_stats
+        print(f"  Total Molecules Discovered: {stats['total_molecules_discovered']}")
+        print(f"  Unique Lattices Created: {stats['unique_lattices_created']}")
+        if stats['complexity_rewards']:
+            print(f"  Average Complexity Reward: {np.mean(stats['complexity_rewards']):.3f}")
+        
+        print(f"\nLayer-wise Lattice Distribution:")
+        for layer_name, lattice_ids in self.layer_lattices.items():
+            print(f"  {layer_name}: {len(lattice_ids)} lattices")
+            if lattice_ids:
+                latest_lattice = self.lattice_library.get(lattice_ids[-1])
+                if latest_lattice:
+                    print(f"    Latest Formula: {latest_lattice.get_molecular_formula()}")
+
+    # ==========================================================
+    # ================ Enhanced Missing Method Integration =====
+    # ==========================================================
+    
+    def update_local_geometry_with_assembly(self, neighbors):
+        """Update local geometry considering assembly relationships"""
+        # Call original geometry update
+        self.update_local_geometry(neighbors)
+        
+        # Add assembly-based geometric adjustments
+        if self.local_tangent_space is not None:
+            # Adjust curvature based on assembly complexity
+            assembly_curvature_factor = min(0.1, self.true_assembly_index / 100.0)
+            self.curvature += assembly_curvature_factor
+            
+            # Record geometry update as assembly operation
+            geo_id = f"geometry_update_{self.id}_{len(self.assembly_operations)}"
+            geo_component = AssemblyComponent(
+                component_id=geo_id,
+                component_type='operation',
+                data={'curvature': self.curvature, 'assembly_factor': assembly_curvature_factor},
+                assembly_steps=1,
+                parents=[],
+                operation='geometry_update'
+            )
+            
+            self.my_components[geo_id] = geo_component
+            self.assembly_tracker.register_component(geo_component, self.generation)
+
+
     # Legacy compatibility methods
     def compute_assembly_index(self):
         """Legacy method - now calls true assembly index calculation"""
@@ -1195,6 +1668,8 @@ class ConceptModule(nn.Module):
 
     def get_position(self):
         return self.position.data.detach().numpy()
+
+
 
 def system_assembly_complexity(population):
     """
