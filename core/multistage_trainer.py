@@ -38,20 +38,19 @@ def convert_to_python_type(value):
         # Fallback to string representation if conversion fails
         return str(value)
 
-def EnhancedMultiStageTrain(dataset_names, norm=False, default_params=None, 
+def MultiStageTrain(dataset_names, default_params=None, 
                            enable_advanced_analysis=True, save_results=True):
     """
-    Enhanced Multi-stage training function with advanced statistical analysis
-    
+    Multi-stage training function with advanced statistical analysis
+
     Args:
-        dataset_names (list): List of dataset names to be used for training
-        norm (bool): Whether to include normalized dataset training
-        default_params (dict): Default parameters for training
-        enable_advanced_analysis (bool): Whether to run advanced statistical analysis
-        save_results (bool): Whether to save results to files
-    
+        - dataset_names (list): List of dataset names to be used for training
+        - default_params (dict): Default parameters for training
+        - enable_advanced_analysis (bool): Whether to run advanced statistical analysis
+        - save_results (bool): Whether to save results to files
+
     Returns:
-        tuple: (all_results, summary_report, timestamp, advanced_analysis)
+        - tuple: (all_results, summary_report, timestamp, advanced_analysis)
     """
     
     # Load datasets (same as before)
