@@ -72,6 +72,25 @@ def to_one_hot(labels, num_classes):
     one_hot[range(len(labels)), labels] = 1
     return one_hot
 
+def convert_to_python_type(value):
+    """Convert numpy types to native Python types for JSON serialization"""
+    try:
+        if hasattr(value, 'dtype'):
+            if 'int' in str(value.dtype):
+                return int(value)
+            elif 'float' in str(value.dtype):
+                return float(value)
+            elif 'bool' in str(value.dtype):
+                return bool(value)
+        # Handle other numpy scalar types
+        if hasattr(value, 'item'):
+            return value.item()
+        return value
+    except (ValueError, TypeError, AttributeError):
+        # Fallback to string representation if conversion fails
+        return str(value)
+
+
 # =========================================
 # ========== MAIN FUNCTION =============
 # =========================================
@@ -290,6 +309,8 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                     top_k_per_generation=5,
                     debug=False
                 )
+
+
                 
                 # Evaluate the best model
                 if bestmod is not None:
@@ -602,8 +623,19 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
 
     # Save summary report
     import json
-    with open(f'experiments/multistage_results/arcnet_summary_{timestamp}.json', 'w') as f:
-        json.dump(summary_report, f, indent=2)
+    summary_filename = f'experiments/multistage_results/arcnet_summary_{timestamp}.json'
+    try:
+        with open(summary_filename, 'w') as f:
+            json.dump(summary_report, f, indent=2, default=convert_to_python_type)
+        
+    except TypeError as e:
+        tqdm.write(f"JSON serialization error: {e}")
+        # Save as pickle as backup
+        import pickle
+        backup_filename = f'experiments/multistage_results/arcnet_summary_{timestamp}.pkl'
+        with open(backup_filename, 'wb') as f:
+            pickle.dump(summary_report, f)
+        
 
     tqdm.write(f"\nSummary report saved to experiments/multistage_results/arcnet_summary_{timestamp}.json")
 
