@@ -75,7 +75,7 @@ def to_one_hot(labels, num_classes):
 # ========== MAIN FUNCTION =============
 # =========================================
 
-def MultiStageTrain(dataset_names, norm=False):
+def MultiStageTrain(dataset_names, norm=False, default_params=None):
 
     """Multi-stage training function with predefined parameters for testing purposes.
     Args:
@@ -199,18 +199,19 @@ def MultiStageTrain(dataset_names, norm=False):
         config = DATASET_CONFIGS[base_dataset_name]
         
         # Default parameters
-        default_params = {
-            'hidden_dim': 30,
-            'initial_population': 50,
-            'steps': 15,
-            'epochs': 1,
-            'lineage_prune_rate': 1500,
-            'lineage_kept': 800,
-            'num_survivors': 25,
-            'q_learning_method': 'neural',
-            'training_method': 'fitness',
-            'enable_irxn': True
-        }
+        if default_params is None:
+            default_params = {
+                'hidden_dim': 30,
+                'initial_population': 80,
+                'steps': 75,
+                'epochs': 5,
+                'lineage_prune_rate': 1500,
+                'lineage_kept': 800,
+                'num_survivors': 33,
+                'q_learning_method': 'neural',
+                'training_method': 'loss',
+                'enable_irxn': True
+            }
         
         # Test different values for the specified parameter
         test_values = PARAMETER_TESTS[param_type][:max_tests]
