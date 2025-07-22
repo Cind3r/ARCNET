@@ -20,6 +20,58 @@ import os
 from datetime import datetime
 from tqdm.notebook import tqdm
 
+def load_breast_cancer_data(test_size=0.2, random_state=42, normalize=False):
+    data = load_breast_cancer()
+    X, y = data.data, data.target
+    if normalize:
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+    return X_train, X_test, y_train, y_test
+
+def load_iris_data(test_size=0.2, random_state=42, normalize=False):
+    data = load_iris()
+    X, y = data.data, data.target
+    if normalize:
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+    return X_train, X_test, y_train, y_test
+
+def load_wine_data(test_size=0.2, random_state=42, normalize=False):
+    data = load_wine()
+    X, y = data.data, data.target
+    if normalize:
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+    return X_train, X_test, y_train, y_test
+
+def load_mnist_data(normalize=True, subset_size=None):
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    
+    if subset_size:
+        x_train = x_train[:subset_size]
+        y_train = y_train[:subset_size]
+        x_test = x_test[:subset_size//5]
+        y_test = y_test[:subset_size//5]
+    
+    y_train = to_categorical(y_train)
+    y_test = to_categorical(y_test)
+    
+    if normalize:
+        x_train = x_train.astype('float32') / 255.
+        x_test = x_test.astype('float32') / 255.
+    
+    x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
+    x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
+    return x_train, x_test, y_train, y_test
+
+def to_one_hot(labels, num_classes):
+    one_hot = torch.zeros(len(labels), num_classes)
+    one_hot[range(len(labels)), labels] = 1
+    return one_hot
+
 def convert_to_python_type(value):
     """Convert numpy types to native Python types for JSON serialization"""
     try:
@@ -59,8 +111,44 @@ def MultiStageTrain(dataset_names, default_params=None,
     
     dataset_load_pbar = tqdm(dataset_names, desc="Loading Datasets")
     
-    # [Dataset loading code remains the same as in original MultiStageTrain]
-    # ... (include all the dataset loading logic from the original function)
+    dataset_load_pbar = tqdm(dataset_names, desc="Loading Datasets")
+    
+    for dataset_name in dataset_load_pbar:
+        dataset_load_pbar.set_postfix({'loading': dataset_name})
+        
+        try:
+            if dataset_name == 'breast_cancer':
+                datasets['breast_cancer'] = load_breast_cancer_data()
+                print(f"Loaded breast_cancer: {datasets['breast_cancer'][0].shape[0]} samples")
+            elif dataset_name == 'breast_cancer_norm':
+                datasets['breast_cancer_norm'] = load_breast_cancer_data(normalize=True)
+                print(f"Loaded breast_cancer_norm: {datasets['breast_cancer_norm'][0].shape[0]} samples")
+            elif dataset_name == 'iris':
+                datasets['iris'] = load_iris_data()
+                print(f"Loaded iris: {datasets['iris'][0].shape[0]} samples")
+            elif dataset_name == 'iris_norm':
+                datasets['iris_norm'] = load_iris_data(normalize=True)
+                print(f"Loaded iris_norm: {datasets['iris_norm'][0].shape[0]} samples")
+            elif dataset_name == 'wine':
+                datasets['wine'] = load_wine_data()
+                print(f"Loaded wine: {datasets['wine'][0].shape[0]} samples")
+            elif dataset_name == 'wine_norm':
+                datasets['wine_norm'] = load_wine_data(normalize=True)
+                print(f"Loaded wine_norm: {datasets['wine_norm'][0].shape[0]} samples")
+            elif dataset_name == 'mnist_small':
+                datasets['mnist_small'] = load_mnist_data(subset_size=10000)
+                print(f"Loaded mnist_small: {datasets['mnist_small'][0].shape[0]} samples")
+            elif dataset_name == 'mnist_full':
+                datasets['mnist_full'] = load_mnist_data()
+                print(f"Loaded mnist_full: {datasets['mnist_full'][0].shape[0]} samples")
+            else:
+                print(f"Warning: Unknown dataset '{dataset_name}' - skipping")
+                
+        except Exception as e:
+            print(f"Error loading {dataset_name}: {e}")
+            continue
+    
+    dataset_load_pbar.close()
     
     # Configuration and parameters (same as before)
     DATASET_CONFIGS = {
