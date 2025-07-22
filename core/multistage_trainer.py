@@ -448,7 +448,64 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
         steps_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
                                           'steps', max_tests=3)
         all_results['steps'].extend(steps_results)
+
+        # Test 4: Epochs Analysis
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("4. EPOCHS ANALYSIS")
+        tqdm.write(f"{'-'*40}")
+        epochs_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test,
+                                          'epochs', max_tests=3)
+        all_results['epochs'].extend(epochs_results)
+
+        # Test 5: Lineage Prune Rate Analysis
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("5. LINEAGE PRUNE RATE ANALYSIS")
+        tqdm.write(f"{'-'*40}")
+        prune_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test,
+                                            'lineage_prune_rate', max_tests=3)
+        all_results['lineage_prune_rate'].extend(prune_results)
         
+        # Test 6: Lineage Kept Analysis
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("6. LINEAGE KEPT ANALYSIS")
+        tqdm.write(f"{'-'*40}")
+        kept_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test,
+                                            'lineage_kept', max_tests=3)
+        all_results['lineage_kept'].extend(kept_results)
+
+        # Test 7: Number of Survivors Analysis
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("7. NUMBER OF SURVIVORS ANALYSIS")
+        tqdm.write(f"{'-'*40}")
+        survivors_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test,
+                                                'num_survivors', max_tests=3)
+        all_results['num_survivors'].extend(survivors_results)
+        
+        # Test 8: Q-Learning Method Analysis
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("8. Q-LEARNING METHOD ANALYSIS")
+        tqdm.write(f"{'-'*40}")
+        q_learning_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test,
+                                                  'q_learning', max_tests=2)
+        all_results['q_learning'].extend(q_learning_results)
+
+        # Test 9: Training Method Analysis
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("9. TRAINING METHOD ANALYSIS")
+        tqdm.write(f"{'-'*40}")
+        training_method_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test,
+                                                        'training_method', max_tests=2)
+        all_results['training_method'].extend(training_method_results)
+
+        # Test 10: Interaction Enable Analysis
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("10. INTERACTION ENABLE ANALYSIS")
+        tqdm.write(f"{'-'*40}")
+        interaction_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test,
+                                                    'enable_irxn', max_tests=2, default_params=default_params)
+        all_results['enable_irxn'].extend(interaction_results)
+
+
         # Update main progress bar with completion stats
         total_experiments = sum(len(results) for results in all_results.values())
         dataset_pbar.set_postfix({
