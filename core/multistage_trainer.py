@@ -99,7 +99,7 @@ def convert_to_python_type(value):
         return str(value)
 
 def MultiStageTrain(dataset_names, default_params=None, 
-                           enable_advanced_analysis=True, save_results=True):
+                           enable_advanced_analysis=True, save_results=True, enable_random_params=False):
     """
     Multi-stage training function with advanced statistical analysis
 
@@ -167,15 +167,14 @@ def MultiStageTrain(dataset_names, default_params=None,
     }
     
     PARAMETER_TESTS = {
-        'hidden_dim': [16, 32, 64, 128],
-        'initial_population': [10, 20, 50, 100],
-        'steps': [10, 30, 50, 75],
-        'epochs': [1, 5, 10, 20],
-        'lineage_prune_rate': [1000, 1500, 2000],
-        'lineage_kept': [500, 800, 1000],
-        'num_survivors': [10, 20, 30, 50],
+        'hidden_dim': [4, 8, 16, 32, 64, 128],
+        'initial_population': [1, 5, 10, 20, 50, 100],
+        'steps': [5, 10, 15, 30, 50, 75],
+        'epochs': [1, 5, 10, 15, 20, 30],
+        'lineage_prune_rate': [500, 1000, 1500, 2000, 2500, 3000],
+        'lineage_kept': [250, 500, 750, 1000, 1500, 2000],
+        'num_survivors': [5, 10, 20, 30, 40, 50],
         'q_learning_method': ['neural', 'tabular'],
-        'training_method': ['fitness', 'loss'],
         'enable_irxn': [True, False]
     }
     
@@ -203,23 +202,42 @@ def MultiStageTrain(dataset_names, default_params=None,
     all_results = defaultdict(list)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    enable_random_params = enable_random_params
     # Enhanced parameter sweep function with better error handling
+    
     def run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
-                           param_type='hidden_dim', max_tests=3):
-        """Enhanced parameter sweep with better statistics collection"""
+                       param_type='hidden_dim', max_tests=6, enable_random_params=enable_random_params):
+        """Enhanced parameter sweep with better statistics collection and optional random parameter assignment"""
         results = []
         base_dataset_name = dataset_name.split('_norm')[0].split('_small')[0].split('_full')[0]
         config = DATASET_CONFIGS[base_dataset_name]
         
         test_values = PARAMETER_TESTS[param_type][:max_tests]
         param_pbar = tqdm(test_values, desc=f"Testing {param_type.replace('_', ' ').title()}", 
-                         leave=False, position=1)
+                        leave=False, position=1)
         
         for value in param_pbar:
             param_pbar.set_postfix({'current_value': value, 'dataset': dataset_name})
             
-            test_params = default_params.copy()
-            test_params[param_type] = value
+            if enable_random_params:
+                # Generate random parameters for all other parameters except the one being tested
+                test_params = {}
+                for param_name, param_values in PARAMETER_TESTS.items():
+                    if param_name == param_type:
+                        # Use the specific value being tested for this parameter
+                        test_params[param_name] = value
+                    else:
+                        # Randomly select from available values for other parameters
+                        test_params[param_name] = np.random.choice(param_values)
+                
+                # Add any parameters that might not be in PARAMETER_TESTS but are in default_params
+                for param_name, param_value in default_params.items():
+                    if param_name not in test_params:
+                        test_params[param_name] = param_value
+            else:
+                # Use default parameters and only modify the parameter being tested
+                test_params = default_params.copy()
+                test_params[param_type] = value
             
             try:
                 # Convert numpy arrays to torch tensors
@@ -242,7 +260,7 @@ def MultiStageTrain(dataset_names, default_params=None,
                     lineage_kept=test_params['lineage_kept'],
                     num_survivors=test_params['num_survivors'],
                     q_learning_method=test_params['q_learning_method'],
-                    training_method=test_params['training_method'],
+                    training_method='loss',  # Assuming 'loss' is the default training method
                     enable_irxn=test_params['enable_irxn'],
                     enable_model_save=False,
                     enable_bias_elimination=False,
@@ -375,7 +393,6 @@ def MultiStageTrain(dataset_names, default_params=None,
             ('lineage_kept', 'LINEAGE KEPT'),
             ('num_survivors', 'NUMBER OF SURVIVORS'),
             ('q_learning_method', 'Q-LEARNING METHOD'),
-            ('training_method', 'TRAINING METHOD'),
             ('enable_irxn', 'INTERACTION ENABLE')
         ]:
             tqdm.write(f"\n{'-'*40}")

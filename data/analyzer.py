@@ -990,11 +990,17 @@ class ARCNETParameterAnalyzer:
         
         # Run all analyses
         #self.detect_outliers()
-        self.anova_test()
-        self.multivariate_regression()
-        self.summary_table()
-        self.export_all_plots()
-        self.bayesian_optimization_stub()
+        try:
+            self.anova_test()
+            self.multivariate_regression()
+            self.summary_table()
+            self.export_all_plots()
+            self.bayesian_optimization_stub()
+        except Exception as e:
+            print(f"Error during analysis: {e}")
+            
+
+
         correlations = self.correlation_analysis()
         sensitivity = self.parameter_sensitivity_analysis()
         self.parameter_interaction_analysis()
