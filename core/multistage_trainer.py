@@ -17,6 +17,7 @@ import warnings
 from collections import defaultdict
 import os
 from datetime import datetime
+from tqdm.notebook import tqdm
 
 # Enhanced Data Loading Functions with additional preprocessing options
 def load_breast_cancer_data(test_size=0.2, random_state=42, normalize=False):
@@ -151,6 +152,8 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
         'enable_irxn': [True, False]
     }
 
+    default_params = default_params 
+
     #     allmods, lineagesnap, flname, bestmod, stats, assembly_registry = Trainer(
     #     X_train=X_train,
     #     y_train=y_train,
@@ -189,8 +192,11 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
     print("="*80)
 
     # Function to run parameter sweep
+    # ...existing code...
+
+    # Function to run parameter sweep
     def run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
-                           param_type='hidden_dim', max_tests=3):
+                           param_type='hidden_dim', max_tests=3, default_params=default_params):
         """
         Run a parameter sweep for a specific parameter type
         """
@@ -215,9 +221,13 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
         
         # Test different values for the specified parameter
         test_values = PARAMETER_TESTS[param_type][:max_tests]
+
+        # Create progress bar for parameter values
+        param_pbar = tqdm(test_values, desc=f"Testing {param_type.replace('_', ' ').title()}", 
+                         leave=False, position=1)
         
-        for i, value in enumerate(test_values):
-            print(f"\n--- Testing {param_type}: {value} for {dataset_name} ---")
+        for value in param_pbar:
+            param_pbar.set_postfix({'current_value': value, 'dataset': dataset_name})
             
             # Update parameter
             test_params = default_params.copy()
@@ -331,55 +341,69 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                 }
                 results.append(result)
                 
-                print(f"Train Accuracy: {train_accuracy:.4f}")
-                print(f"Test Accuracy: {test_accuracy:.4f}")
-                print(f"Test F1-Score: {result['test_f1']:.4f}")
-                print(f"Final Population: {len(allmods)} modules")
-                
+                # Update progress bar with current results
+                param_pbar.set_postfix({
+                    'test_acc': f"{test_accuracy:.3f}",
+                    'test_f1': f"{result['test_f1']:.3f}",
+                    'pop_size': len(allmods)
+                })
                 
             except Exception as e:
-                print(f"Error with {param_type}={value}: {e}")
-                import traceback
-                traceback.print_exc()
+                param_pbar.set_postfix({'status': f"Error: {str(e)[:30]}..."})
+                tqdm.write(f"Error with {param_type}={value}: {e}")
                 continue
         
+        param_pbar.close()
         return results
 
     # Test each dataset with different parameter configurations
-    for dataset_name, (X_train, X_test, y_train, y_test) in datasets.items():
-        print(f"\n{'='*60}")
-        print(f"TESTING DATASET: {dataset_name.upper()}")
-        print(f"{'='*60}")
-        print(f"Training shape: {X_train.shape}, Test shape: {X_test.shape}")
+    dataset_pbar = tqdm(datasets.items(), desc="Processing Datasets", position=0)
+    
+    for dataset_name, (X_train, X_test, y_train, y_test) in dataset_pbar:
+        dataset_pbar.set_postfix({'current_dataset': dataset_name})
+        
+        tqdm.write(f"\n{'='*60}")
+        tqdm.write(f"TESTING DATASET: {dataset_name.upper()}")
+        tqdm.write(f"{'='*60}")
+        tqdm.write(f"Training shape: {X_train.shape}, Test shape: {X_test.shape}")
         
         # Test 1: Hidden Dimension Analysis
-        print(f"\n{'-'*40}")
-        print("1. HIDDEN DIMENSION ANALYSIS")
-        print(f"{'-'*40}")
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("1. HIDDEN DIMENSION ANALYSIS")
+        tqdm.write(f"{'-'*40}")
         hidden_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
                                            'hidden_dim', max_tests=3)
         all_results['hidden_dim'].extend(hidden_results)
         
         # Test 2: Population Size Analysis
-        print(f"\n{'-'*40}")
-        print("2. POPULATION SIZE ANALYSIS")
-        print(f"{'-'*40}")
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("2. POPULATION SIZE ANALYSIS")
+        tqdm.write(f"{'-'*40}")
         pop_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
                                         'initial_population', max_tests=3)
         all_results['initial_population'].extend(pop_results)
         
         # Test 3: Evolution Steps Analysis
-        print(f"\n{'-'*40}")
-        print("3. EVOLUTION STEPS ANALYSIS")
-        print(f"{'-'*40}")
+        tqdm.write(f"\n{'-'*40}")
+        tqdm.write("3. EVOLUTION STEPS ANALYSIS")
+        tqdm.write(f"{'-'*40}")
         steps_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
                                           'steps', max_tests=3)
         all_results['steps'].extend(steps_results)
+        
+        # Update main progress bar with completion stats
+        total_experiments = sum(len(results) for results in all_results.values())
+        dataset_pbar.set_postfix({
+            'completed_experiments': total_experiments,
+            'current_dataset': dataset_name
+        })
+    
+    dataset_pbar.close()
 
     # Comprehensive Results Analysis
-    print("\n" + "="*80)
-    print("COMPREHENSIVE RESULTS ANALYSIS")
-    print("="*80)
+    tqdm.write("\n" + "="*80)
+    tqdm.write("COMPREHENSIVE RESULTS ANALYSIS")
+    tqdm.write("="*80)
 
     # Create summary DataFrames
     def create_summary_df(results, param_type):
@@ -396,37 +420,49 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
         
         return summary
 
-    # Generate summaries for each parameter type
-    for param_type, results in all_results.items():
+    # Generate summaries for each parameter type with progress tracking
+    summary_pbar = tqdm(all_results.items(), desc="Generating Summaries", leave=False)
+    
+    for param_type, results in summary_pbar:
+        summary_pbar.set_postfix({'current_param': param_type})
+        
         if results:
-            print(f"\n{'-'*60}")
-            print(f"{param_type.upper()} SUMMARY")
-            print(f"{'-'*60}")
+            tqdm.write(f"\n{'-'*60}")
+            tqdm.write(f"{param_type.upper()} SUMMARY")
+            tqdm.write(f"{'-'*60}")
             
             summary_df = create_summary_df(results, param_type)
-            print(summary_df.to_string())
+            tqdm.write(summary_df.to_string())
+    
+    summary_pbar.close()
 
     # Best performing configurations
-    print(f"\n{'='*60}")
-    print("BEST PERFORMING CONFIGURATIONS")
-    print(f"{'='*60}")
+    tqdm.write(f"\n{'='*60}")
+    tqdm.write("BEST PERFORMING CONFIGURATIONS")
+    tqdm.write(f"{'='*60}")
 
-    for param_type, results in all_results.items():
+    best_config_pbar = tqdm(all_results.items(), desc="Finding Best Configurations", leave=False)
+    
+    for param_type, results in best_config_pbar:
+        best_config_pbar.set_postfix({'current_param': param_type})
+        
         if results:
             df = pd.DataFrame(results)
             best_per_dataset = df.loc[df.groupby('dataset')['test_accuracy'].idxmax()]
             
-            print(f"\n{param_type.upper()} - Best per dataset:")
+            tqdm.write(f"\n{param_type.upper()} - Best per dataset:")
             for _, row in best_per_dataset.iterrows():
-                print(f"  {row['dataset']}: {row['parameter_value']} -> "
-                      f"Test Accuracy: {row['test_accuracy']:.4f}, "
-                      f"Test F1: {row['test_f1']:.4f}, "
-                      f"Population: {row['final_population_size']}")
+                tqdm.write(f"  {row['dataset']}: {row['parameter_value']} -> "
+                          f"Test Accuracy: {row['test_accuracy']:.4f}, "
+                          f"Test F1: {row['test_f1']:.4f}, "
+                          f"Population: {row['final_population_size']}")
+    
+    best_config_pbar.close()
 
     # Generate comprehensive visualization
-    print(f"\n{'='*60}")
-    print("GENERATING VISUALIZATION PLOTS")
-    print(f"{'='*60}")
+    tqdm.write(f"\n{'='*60}")
+    tqdm.write("GENERATING VISUALIZATION PLOTS")
+    tqdm.write(f"{'='*60}")
 
     # Create plots
     n_param_types = len(all_results)
@@ -439,8 +475,12 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
         
         fig.suptitle('ARCNET Multistage Training Analysis Results', fontsize=16, fontweight='bold')
 
+        plot_pbar = tqdm(all_results.items(), desc="Creating Plots", leave=False)
         plot_idx = 0
-        for param_type, results in all_results.items():
+        
+        for param_type, results in plot_pbar:
+            plot_pbar.set_postfix({'current_plot': param_type})
+            
             if results and plot_idx < 3:
                 df = pd.DataFrame(results)
                 
@@ -467,26 +507,34 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                 ax2.set_ylabel('Dataset')
                 
                 plot_idx += 1
+        
+        plot_pbar.close()
 
         plt.tight_layout()
         plt.savefig(f'docs/arcnet_multistage_analysis_{timestamp}.png', dpi=300, bbox_inches='tight')
         plt.show()
 
     # Save results to CSV
-    print(f"\n{'='*60}")
-    print("SAVING RESULTS")
-    print(f"{'='*60}")
+    tqdm.write(f"\n{'='*60}")
+    tqdm.write("SAVING RESULTS")
+    tqdm.write(f"{'='*60}")
 
     # Create results directory if it doesn't exist
     os.makedirs('experiments/multistage_results', exist_ok=True)
 
-    # Save comprehensive results
-    for param_type, results in all_results.items():
+    # Save comprehensive results with progress tracking
+    save_pbar = tqdm(all_results.items(), desc="Saving Results", leave=False)
+    
+    for param_type, results in save_pbar:
+        save_pbar.set_postfix({'saving': param_type})
+        
         if results:
             df = pd.DataFrame(results)
             filename = f'experiments/multistage_results/arcnet_{param_type}_{timestamp}.csv'
             df.to_csv(filename, index=False)
-            print(f"Saved {param_type} results to {filename}")
+            tqdm.write(f"Saved {param_type} results to {filename}")
+    
+    save_pbar.close()
 
     # Create and save summary report
     summary_report = {
@@ -531,15 +579,19 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
     with open(f'experiments/multistage_results/arcnet_summary_{timestamp}.json', 'w') as f:
         json.dump(summary_report, f, indent=2)
 
-    print(f"\nSummary report saved to experiments/multistage_results/arcnet_summary_{timestamp}.json")
+    tqdm.write(f"\nSummary report saved to experiments/multistage_results/arcnet_summary_{timestamp}.json")
 
     # Final recommendations
-    print(f"\n{'='*80}")
-    print("FINAL RECOMMENDATIONS")
-    print(f"{'='*80}")
+    tqdm.write(f"\n{'='*80}")
+    tqdm.write("FINAL RECOMMENDATIONS")
+    tqdm.write(f"{'='*80}")
 
-    for dataset in datasets.keys():
-        print(f"\n{dataset.upper()} OPTIMAL CONFIGURATION:")
+    rec_pbar = tqdm(datasets.keys(), desc="Generating Recommendations", leave=False)
+    
+    for dataset in rec_pbar:
+        rec_pbar.set_postfix({'current_dataset': dataset})
+        
+        tqdm.write(f"\n{dataset.upper()} OPTIMAL CONFIGURATION:")
         dataset_recommendations = {}
         
         for param_type, results in all_results.items():
@@ -553,12 +605,16 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                         'test_accuracy': best_config['test_accuracy'],
                         'test_f1': best_config['test_f1']
                     }
-                    print(f"  {param_type.replace('_', ' ').title()}: {best_config['parameter_value']} "
-                          f"(Acc: {best_config['test_accuracy']:.4f}, "
-                          f"F1: {best_config['test_f1']:.4f})")
+                    tqdm.write(f"  {param_type.replace('_', ' ').title()}: {best_config['parameter_value']} "
+                              f"(Acc: {best_config['test_accuracy']:.4f}, "
+                              f"F1: {best_config['test_f1']:.4f})")
+    
+    rec_pbar.close()
 
-    print(f"\n{'='*80}")
-    print("MULTISTAGE ANALYSIS COMPLETE")
-    print(f"{'='*80}")
+    tqdm.write(f"\n{'='*80}")
+    tqdm.write("MULTISTAGE ANALYSIS COMPLETE")
+    tqdm.write(f"{'='*80}")
     
     return all_results, summary_report, timestamp
+
+
