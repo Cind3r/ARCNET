@@ -254,7 +254,17 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                 )
                 
                 print(f"  Training completed. Population size: {len(allmods)}")
-                print(f"  Best model found: {bestmod is not None}")
+             
+                
+                # Get the best model from the final population
+                if allmods and len(allmods) > 0:
+                    # Find the best model from the final population
+                    best_model = max(allmods, key=lambda m: m.fitness)
+                    print(f"  Best model found: True")
+                    print(f"  Best model fitness: {best_model.fitness:.4f}")
+                else:
+                    best_model = None
+                    print(f"  Best model found: False")
                 
                 # Initialize default values
                 train_accuracy = 0.0
@@ -263,13 +273,13 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                 test_report = {'weighted avg': {'precision': 0.0, 'recall': 0.0, 'f1-score': 0.0}}
                 
                 # Evaluate the best model if it exists
-                if bestmod is not None:
+                if best_model is not None:
                     print("  Evaluating best model...")
-                    bestmod.eval()
+                    best_model.eval()
                     with torch.no_grad():
                         # Make predictions
-                        train_outputs = bestmod(X_train_tensor)
-                        test_outputs = bestmod(X_test_tensor)
+                        train_outputs = best_model(X_train_tensor)
+                        test_outputs = best_model(X_test_tensor)
                         
                         # Calculate accuracies based on task type
                         if config['binary']:
@@ -332,7 +342,8 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                     'train_accuracy': train_accuracy,
                     'test_accuracy': test_accuracy,
                     'final_population_size': len(allmods) if allmods else 0,
-                    'best_model_id': bestmod.id if hasattr(bestmod, 'id') and bestmod else 'none',
+                    'best_model_id': best_model.id if hasattr(best_model, 'id') and best_model else 'none',
+                    'best_model_fitness': float(best_model.fitness) if best_model else 0.0,
                     'train_precision': train_report.get('weighted avg', {}).get('precision', 0.0),
                     'train_recall': train_report.get('weighted avg', {}).get('recall', 0.0),
                     'train_f1': train_report.get('weighted avg', {}).get('f1-score', 0.0),
@@ -346,6 +357,7 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                 }
                 results.append(result)
                 print(f"  ✓ Result stored: Test Acc={test_accuracy:.4f}, F1={result['test_f1']:.4f}")
+
                 
             except Exception as e:
                 print(f"  ✗ Error: {e}")
