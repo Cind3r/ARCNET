@@ -310,16 +310,27 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                     debug=False
                 )
 
-
+                # Get the best model from the final population
+                if allmods and len(allmods) > 0:
+                    # Find the best model from the final population
+                    best_model = max(allmods, key=lambda m: m.fitness)
+                else:
+                    best_model = None
+            
+                # Initialize default values
+                train_accuracy = 0.0
+                test_accuracy = 0.0
+                train_report = {'weighted avg': {'precision': 0.0, 'recall': 0.0, 'f1-score': 0.0}}
+                test_report = {'weighted avg': {'precision': 0.0, 'recall': 0.0, 'f1-score': 0.0}}
                 
                 # Evaluate the best model
-                if bestmod is not None:
-                    bestmod.eval()
+                if best_model is not None:
+                    best_model.eval()
                     with torch.no_grad():
                         # Make predictions
-                        train_outputs = bestmod(X_train_tensor)
-                        test_outputs = bestmod(X_test_tensor)
-                        
+                        train_outputs = best_model(X_train_tensor)
+                        test_outputs = best_model(X_test_tensor)
+
                         # Calculate accuracies based on task type
                         if config['binary']:
                             # Binary classification
@@ -376,7 +387,7 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                     'train_accuracy': train_accuracy,
                     'test_accuracy': test_accuracy,
                     'final_population_size': len(allmods),
-                    'best_model_id': bestmod.id if hasattr(bestmod, 'id') else 'unknown',
+                    'best_model_id': best_model.id if hasattr(best_model, 'id') else 'unknown',
                     'train_precision': train_report.get('weighted avg', {}).get('precision', 0.0),
                     'train_recall': train_report.get('weighted avg', {}).get('recall', 0.0),
                     'train_f1': train_report.get('weighted avg', {}).get('f1-score', 0.0),
