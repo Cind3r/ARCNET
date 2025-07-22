@@ -241,9 +241,16 @@ def MultiStageTrain(dataset_names, default_params=None,
             try:
                 # Convert numpy arrays to torch tensors
                 X_train_tensor = torch.FloatTensor(X_train)
-                y_train_tensor = torch.FloatTensor(y_train)
                 X_test_tensor = torch.FloatTensor(X_test)
-                y_test_tensor = torch.FloatTensor(y_test)
+                
+                # Handle target tensors properly for multi-class vs binary classification
+                if config['binary']:
+                    y_train_tensor = torch.FloatTensor(y_train)
+                    y_test_tensor = torch.FloatTensor(y_test)
+                else:
+                    # For multi-class classification, use LongTensor for class indices
+                    y_train_tensor = torch.LongTensor(y_train)
+                    y_test_tensor = torch.LongTensor(y_test)
                 
                 # Run ARCNET training
                 allmods, lineagesnap, flname, bestmod, stats, assembly_registry = Trainer(
