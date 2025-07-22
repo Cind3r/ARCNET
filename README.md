@@ -420,7 +420,7 @@ Where:
 Information propagates via manifold-aware messaging: 
 
 $$
-\mathbf{M}_i^{(t)} = \sigma(g_i) \cdot \frac{1}{|\mathcal{N}_{\mathcal{M}}(m_i)|} \sum_{j \in \mathcal{N}_{\mathcal{M}}(m_i)} \frac{\mathbf{h}_j^{(t-1)}}{1 + d_{\mathcal{M}}(\mathbf{p}_i, \mathbf{p}_j)}
+\mathbf{M}\_i^{(t)} = \sigma(g_i) \cdot \frac{1}{|\mathcal{N}_{\mathcal{M}}(m_i)|} \sum_{j \in \mathcal{N}_{\mathcal{M}}(m_i)} \frac{\mathbf{h}_j^{(t-1)}}{1 + d_{\mathcal{M}}(\mathbf{p}_i, \mathbf{p}_j)}
 $$
 
 Where:  
@@ -439,7 +439,7 @@ Theorem (AAN-Q Global Convergence): Under the following conditions:
 - Bounded fitness landscape: $F: \mathcal{S} \rightarrow [0,1]$
 - Sufficient exploration: $\epsilon$-greedy Q-learning with $\epsilon > 0$
 - Controlled bias elimination: $|\text{eliminated}| \leq \alpha |\mathcal{P}|$ per step
-- Manifold Lipschitz continuity: $|F(\mathbf{p}_1) - F(\mathbf{p}_2)| \leq L \cdot d_{\mathcal{M}}(\mathbf{p}_1, \mathbf{p}_2)$
+- Manifold Lipschitz continuity: $|F(\mathbf{p}\_1) - F(\mathbf{p}\_2)| \leq L \cdot d_{\mathcal{M}}(\mathbf{p}_1, \mathbf{p}_2)$
 
 The system converges to a stable configuration: 
 
