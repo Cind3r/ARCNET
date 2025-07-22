@@ -1200,15 +1200,25 @@ class ConceptModule(nn.Module):
                 print(f"Warning: Q-value boost failed for module {self.id}: {e}")
     
     def get_q_memory_usage(self):
-        """Get Q-learning memory usage with Assembly Theory tracking"""
+        
         if self.q_learning_method == 'neural' and self.q_function is not None:
+            # Calculate actual memory usage in MB
+            q_network_params = sum(p.numel() for p in self.q_function.parameters())
+            param_memory_mb = (q_network_params * 4) / (1024 * 1024)  # 4 bytes per float32, convert to MB
+            
+            # Estimate replay buffer memory (approximate)
+            buffer_memory_mb = len(self.q_function.replay_buffer) * 0.001  # Rough estimate
+            
+            total_memory_mb = param_memory_mb + buffer_memory_mb
+            
             memory_stats = {
                 'replay_buffer_size': len(self.q_function.replay_buffer),
                 'buffer_capacity': self.q_function.buffer_size,
                 'memory_utilization': len(self.q_function.replay_buffer) / self.q_function.buffer_size,
-                'q_network_parameters': sum(p.numel() for p in self.q_function.parameters()),
+                'q_network_parameters': q_network_params,
                 'total_q_experiences_stored': len(self.q_function.replay_buffer),
-                'assembly_related_experiences': 0  # Count assembly-related experiences
+                'assembly_related_experiences': 0,  # Count assembly-related experiences
+                'total_memory': total_memory_mb  # Add this for trainer compatibility
             }
             
             # Count experiences from assembly operations
@@ -1226,7 +1236,8 @@ class ConceptModule(nn.Module):
                 'memory_utilization': 0.0,
                 'q_network_parameters': 0,
                 'total_q_experiences_stored': 0,
-                'assembly_related_experiences': 0
+                'assembly_related_experiences': 0,
+                'total_memory': 0.0  # Add this for trainer compatibility
             }
     
     def set_reward(self, reward):
