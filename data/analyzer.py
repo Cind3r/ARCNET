@@ -11,6 +11,8 @@ import plotly.figure_factory as ff
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
+import networkx as nx
+from matplotlib.patches import Circle
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -247,179 +249,520 @@ class ARCNETParameterAnalyzer:
         
         return sensitivity_results
     
-    def create_advanced_heatmaps(self):
+    def create_advanced_visualizations(self):
         """
-        Create comprehensive heatmap visualizations
+        Create comprehensive visualization suite (replacement for heatmaps)
         """
         if self.combined_df is None:
             print("No data loaded for visualization")
             return
         
-        # 1. Parameter-Performance Correlation Heatmap
-        self._create_correlation_heatmap()
+        # 1. Correlation Network Graphs
+        self._create_correlation_networks()
         
-        # 2. Multi-metric Performance Heatmaps
-        self._create_multi_metric_heatmaps()
+        # 2. Parallel Coordinates Plots
+        self._create_parallel_coordinates()
         
-        # 3. Dataset Comparison Heatmap
-        self._create_dataset_comparison_heatmap()
+        # 3. Interactive Scatter Plot Matrices
+        self._create_scatter_matrices()
         
-        # 4. Interactive Parameter Space Exploration
-        self._create_interactive_heatmaps()
+        # 4. Parameter Performance Radar Charts
+        self._create_radar_charts()
+        
+        # 5. 3D Parameter Space Visualization
+        self._create_3d_parameter_space()
+        
+        # 6. Distribution and Trend Analysis
+        self._create_distribution_plots()
+        
+        # 7. Interactive Correlation Wheels
+        self._create_correlation_wheels()
     
-    def _create_correlation_heatmap(self):
-        """Create correlation heatmap between parameters and performance metrics"""
+    def _create_correlation_networks(self):
+        """Create network graphs showing parameter correlations"""
+        print("Creating correlation network visualizations...")
         
-        # Prepare correlation matrix
-        correlation_data = []
         datasets = self.combined_df['dataset'].unique()
         
         for dataset in datasets:
             dataset_data = self.combined_df[self.combined_df['dataset'] == dataset]
             
-            correlations = {}
+            # Calculate correlation matrix between parameters
+            param_correlations = {}
+            performance_correlations = {}
+            
             for param in self.numeric_params:
                 param_data = dataset_data[dataset_data['parameter_type'] == param]
                 if len(param_data) >= 3:
-                    corr_with_performance = param_data['parameter_value'].corr(param_data['performance_score'])
-                    correlations[param] = corr_with_performance
-                else:
-                    correlations[param] = np.nan
+                    corr = param_data['parameter_value'].corr(param_data['performance_score'])
+                    if not np.isnan(corr):
+                        performance_correlations[param] = abs(corr)
             
-            correlations['dataset'] = dataset
-            correlation_data.append(correlations)
-        
-        if correlation_data:
-            corr_df = pd.DataFrame(correlation_data).set_index('dataset')
-            
-            plt.figure(figsize=(12, 8))
-            mask = corr_df.isnull()
-            sns.heatmap(corr_df, annot=True, cmap='RdBu_r', center=0, 
-                       mask=mask, fmt='.3f', cbar_kws={'label': 'Correlation with Performance'})
-            plt.title('Parameter-Performance Correlations Across Datasets', fontsize=16, fontweight='bold')
-            plt.xlabel('Parameters', fontsize=12)
-            plt.ylabel('Datasets', fontsize=12)
-            plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
-            plt.show()
-    
-    def _create_multi_metric_heatmaps(self):
-        """Create comprehensive heatmaps for multiple performance metrics"""
-        
-        metrics = ['test_accuracy', 'test_f1', 'test_precision', 'test_recall']
-        
-        for param in self.numeric_params:
-            param_data = self.combined_df[self.combined_df['parameter_type'] == param]
-            
-            if param_data.empty:
+            if not performance_correlations:
                 continue
             
-            # Create pivot tables for each metric
-            fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-            fig.suptitle(f'{param.replace("_", " ").title()} Performance Analysis', fontsize=16, fontweight='bold')
+            # Create network graph
+            fig, ax = plt.subplots(figsize=(12, 10))
             
-            for i, metric in enumerate(metrics):
-                ax = axes[i//2, i%2]
-                
-                # Create pivot table
-                pivot_data = param_data.pivot_table(
-                    values=metric,
-                    index='dataset',
-                    columns='parameter_value',
-                    aggfunc='mean'
-                )
-                
-                if not pivot_data.empty:
-                    sns.heatmap(pivot_data, annot=True, fmt='.3f', 
-                              cmap=self.color_palettes.get(metric.split('_')[1], 'viridis'),
-                              ax=ax, cbar_kws={'label': metric.replace('_', ' ').title()})
-                    ax.set_title(f'{metric.replace("_", " ").title()}')
-                    ax.set_xlabel('Parameter Value')
-                    ax.set_ylabel('Dataset')
+            # Create circular layout
+            G = nx.Graph()
+            params = list(performance_correlations.keys())
+            G.add_nodes_from(params)
+            
+            # Add edges based on correlation strength
+            threshold = 0.3  # Only show correlations above this threshold
+            for i, param1 in enumerate(params):
+                for j, param2 in enumerate(params[i+1:], i+1):
+                    # Calculate correlation between parameter effects
+                    corr_strength = abs(performance_correlations[param1] - performance_correlations[param2])
+                    if corr_strength < threshold:
+                        G.add_edge(param1, param2, weight=1-corr_strength)
+            
+            # Create circular layout
+            pos = nx.circular_layout(G)
+            
+            # Draw network
+            node_sizes = [performance_correlations[param] * 3000 for param in params]
+            node_colors = [performance_correlations[param] for param in params]
+            
+            nx.draw_networkx_nodes(G, pos, node_size=node_sizes, 
+                                 node_color=node_colors, cmap='viridis', 
+                                 alpha=0.8, ax=ax)
+            
+            nx.draw_networkx_edges(G, pos, alpha=0.5, width=2, ax=ax)
+            
+            # Add labels
+            labels = {param: param.replace('_', '\n').title() for param in params}
+            nx.draw_networkx_labels(G, pos, labels, font_size=10, ax=ax)
+            
+            ax.set_title(f'Parameter Correlation Network - {dataset}', 
+                        fontsize=16, fontweight='bold')
+            ax.axis('off')
+            
+            # Add colorbar
+            sm = plt.cm.ScalarMappable(cmap='viridis', 
+                                     norm=plt.Normalize(vmin=min(performance_correlations.values()),
+                                                       vmax=max(performance_correlations.values())))
+            sm.set_array([])
+            cbar = plt.colorbar(sm, ax=ax, shrink=0.8)
+            cbar.set_label('Correlation Strength with Performance', rotation=270, labelpad=20)
             
             plt.tight_layout()
             plt.show()
     
-    def _create_dataset_comparison_heatmap(self):
-        """Create heatmap comparing optimal parameter values across datasets"""
-        
-        optimal_params = {}
-        
-        for dataset in self.combined_df['dataset'].unique():
-            dataset_data = self.combined_df[self.combined_df['dataset'] == dataset]
-            optimal_params[dataset] = {}
-            
-            for param in self.numeric_params:
-                param_data = dataset_data[dataset_data['parameter_type'] == param]
-                if not param_data.empty:
-                    best_row = param_data.loc[param_data['performance_score'].idxmax()]
-                    optimal_params[dataset][param] = best_row['parameter_value']
-        
-        if optimal_params:
-            optimal_df = pd.DataFrame(optimal_params).T
-            
-            # Normalize values for better visualization
-            normalized_df = optimal_df.copy()
-            for col in optimal_df.columns:
-                col_data = optimal_df[col].dropna()
-                if len(col_data) > 1:
-                    normalized_df[col] = (optimal_df[col] - col_data.min()) / (col_data.max() - col_data.min())
-            
-            plt.figure(figsize=(14, 8))
-            sns.heatmap(normalized_df, annot=optimal_df, fmt='.0f', 
-                       cmap='RdYlBu_r', cbar_kws={'label': 'Normalized Parameter Value'})
-            plt.title('Optimal Parameter Values Across Datasets', fontsize=16, fontweight='bold')
-            plt.xlabel('Parameters', fontsize=12)
-            plt.ylabel('Datasets', fontsize=12)
-            plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
-            plt.show()
-    
-    def _create_interactive_heatmaps(self):
-        """Create interactive heatmaps using Plotly"""
+    def _create_parallel_coordinates(self):
+        """Create parallel coordinates plots for multi-dimensional analysis"""
+        print("Creating parallel coordinates visualizations...")
         
         try:
-            import plotly.graph_objects as go
-            from plotly.subplots import make_subplots
+            # Prepare data for parallel coordinates
+            plot_data = []
             
-            # Create interactive correlation matrix
-            datasets = self.combined_df['dataset'].unique()
-            params = self.numeric_params
+            for dataset in self.combined_df['dataset'].unique():
+                dataset_data = self.combined_df[self.combined_df['dataset'] == dataset]
+                
+                # Get parameter values for each experiment
+                experiments = {}
+                for _, row in dataset_data.iterrows():
+                    exp_id = f"{dataset}_{row.name}"
+                    if exp_id not in experiments:
+                        experiments[exp_id] = {
+                            'dataset': dataset,
+                            'performance_score': row['performance_score'],
+                            'test_accuracy': row['test_accuracy'],
+                            'test_f1': row['test_f1']
+                        }
+                    experiments[exp_id][row['parameter_type']] = row['parameter_value']
+                
+                # Convert to list
+                for exp_data in experiments.values():
+                    if len([k for k in exp_data.keys() if k in self.numeric_params]) >= 3:
+                        plot_data.append(exp_data)
             
-            correlation_matrix = np.zeros((len(datasets), len(params)))
+            if not plot_data:
+                print("Insufficient data for parallel coordinates")
+                return
             
-            for i, dataset in enumerate(datasets):
-                for j, param in enumerate(params):
-                    param_data = self.combined_df[
-                        (self.combined_df['dataset'] == dataset) & 
-                        (self.combined_df['parameter_type'] == param)
-                    ]
-                    if len(param_data) >= 3:
-                        corr = param_data['parameter_value'].corr(param_data['performance_score'])
-                        correlation_matrix[i, j] = corr if not np.isnan(corr) else 0
+            df_plot = pd.DataFrame(plot_data)
             
-            fig = go.Figure(data=go.Heatmap(
-                z=correlation_matrix,
-                x=[p.replace('_', ' ').title() for p in params],
-                y=datasets,
-                colorscale='RdBu',
-                zmid=0,
-                colorbar=dict(title="Correlation"),
-                hoverongaps=False
+            # Normalize parameters for better visualization
+            params_to_plot = [p for p in self.numeric_params if p in df_plot.columns]
+            if len(params_to_plot) < 3:
+                print("Need at least 3 parameters for parallel coordinates")
+                return
+            
+            df_normalized = df_plot.copy()
+            for param in params_to_plot:
+                if df_plot[param].max() != df_plot[param].min():
+                    df_normalized[param] = (df_plot[param] - df_plot[param].min()) / (df_plot[param].max() - df_plot[param].min())
+            
+            # Create plotly parallel coordinates
+            fig = go.Figure(data=go.Parcoords(
+                line=dict(color=df_normalized['performance_score'],
+                         colorscale='viridis',
+                         showscale=True,
+                         colorbar=dict(title="Performance Score")),
+                dimensions=[
+                    dict(range=[0, 1],
+                         constraintrange=[0, 1],
+                         label=param.replace('_', ' ').title(),
+                         values=df_normalized[param]) for param in params_to_plot
+                ] + [
+                    dict(range=[df_plot['performance_score'].min(), df_plot['performance_score'].max()],
+                         label="Performance Score",
+                         values=df_plot['performance_score'])
+                ]
             ))
             
             fig.update_layout(
-                title='Interactive Parameter-Performance Correlation Matrix',
-                xaxis_title='Parameters',
-                yaxis_title='Datasets',
+                title='Parameter Space Exploration - Parallel Coordinates',
+                font=dict(size=12),
                 height=600,
-                width=1000
+                width=1200
             )
             
             fig.show()
             
-        except ImportError:
-            print("Plotly not available for interactive visualizations")
+        except Exception as e:
+            print(f"Could not create parallel coordinates plot: {e}")
+    
+    def _create_scatter_matrices(self):
+        """Create interactive scatter plot matrices"""
+        print("Creating scatter plot matrices...")
+        
+        for dataset in self.combined_df['dataset'].unique():
+            dataset_data = self.combined_df[self.combined_df['dataset'] == dataset]
+            
+            # Prepare data for scatter matrix
+            scatter_data = {}
+            scatter_data['Performance'] = []
+            scatter_data['Dataset'] = []
+            
+            for param in self.numeric_params:
+                scatter_data[param.replace('_', ' ').title()] = []
+            
+            # Collect data points
+            for param in self.numeric_params:
+                param_data = dataset_data[dataset_data['parameter_type'] == param]
+                for _, row in param_data.iterrows():
+                    scatter_data['Performance'].append(row['performance_score'])
+                    scatter_data['Dataset'].append(dataset)
+                    
+                    # Fill parameter values
+                    for p in self.numeric_params:
+                        if p == param:
+                            scatter_data[p.replace('_', ' ').title()].append(row['parameter_value'])
+                        else:
+                            scatter_data[p.replace('_', ' ').title()].append(None)
+            
+            # Convert to DataFrame and remove rows with too many nulls
+            df_scatter = pd.DataFrame(scatter_data)
+            df_scatter = df_scatter.dropna(thresh=3)  # Keep rows with at least 3 non-null values
+            
+            if len(df_scatter) < 5:
+                continue
+            
+            # Create scatter matrix plot
+            params_for_plot = [col for col in df_scatter.columns 
+                             if col not in ['Performance', 'Dataset'] and df_scatter[col].notna().sum() > 2]
+            
+            if len(params_for_plot) >= 2:
+                try:
+                    fig = px.scatter_matrix(
+                        df_scatter[params_for_plot + ['Performance']],
+                        color='Performance',
+                        title=f'Parameter Relationships - {dataset}',
+                        color_continuous_scale='viridis',
+                        height=800,
+                        width=1000
+                    )
+                    fig.update_traces(diagonal_visible=False)
+                    fig.show()
+                except Exception as e:
+                    print(f"Could not create scatter matrix for {dataset}: {e}")
+    
+    def _create_radar_charts(self):
+        """Create radar charts showing parameter profiles"""
+        print("Creating radar chart visualizations...")
+        
+        for dataset in self.combined_df['dataset'].unique():
+            dataset_data = self.combined_df[self.combined_df['dataset'] == dataset]
+            
+            # Get best performing configuration
+            best_configs = {}
+            for param in self.numeric_params:
+                param_data = dataset_data[dataset_data['parameter_type'] == param]
+                if not param_data.empty:
+                    best_row = param_data.loc[param_data['performance_score'].idxmax()]
+                    best_configs[param] = best_row['parameter_value']
+            
+            if len(best_configs) < 3:
+                continue
+            
+            # Normalize values for radar chart
+            normalized_values = {}
+            for param, value in best_configs.items():
+                param_data = dataset_data[dataset_data['parameter_type'] == param]
+                if len(param_data) > 1:
+                    min_val = param_data['parameter_value'].min()
+                    max_val = param_data['parameter_value'].max()
+                    if max_val != min_val:
+                        normalized_values[param] = (value - min_val) / (max_val - min_val)
+                    else:
+                        normalized_values[param] = 0.5
+                else:
+                    normalized_values[param] = 0.5
+            
+            # Create radar chart
+            categories = list(normalized_values.keys())
+            values = list(normalized_values.values())
+            
+            # Close the radar chart
+            categories += [categories[0]]
+            values += [values[0]]
+            
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=[cat.replace('_', ' ').title() for cat in categories],
+                fill='toself',
+                name=f'Optimal Config - {dataset}',
+                line_color='rgb(255, 99, 71)',
+                fillcolor='rgba(255, 99, 71, 0.3)'
+            ))
+            
+            fig.update_layout(
+                polar=dict(
+                    radialaxis=dict(
+                        visible=True,
+                        range=[0, 1]
+                    )),
+                showlegend=True,
+                title=f"Optimal Parameter Profile - {dataset}",
+                height=600,
+                width=600
+            )
+            
+            fig.show()
+    
+    def _create_3d_parameter_space(self):
+        """Create 3D visualizations of parameter space"""
+        print("Creating 3D parameter space visualizations...")
+        
+        for dataset in self.combined_df['dataset'].unique():
+            dataset_data = self.combined_df[self.combined_df['dataset'] == dataset]
+            
+            # Find top 3 most variable parameters
+            param_variance = {}
+            for param in self.numeric_params:
+                param_data = dataset_data[dataset_data['parameter_type'] == param]
+                if len(param_data) > 1:
+                    param_variance[param] = param_data['parameter_value'].var()
+            
+            if len(param_variance) < 3:
+                continue
+            
+            top_params = sorted(param_variance.items(), key=lambda x: x[1], reverse=True)[:3]
+            param_names = [p[0] for p in top_params]
+            
+            # Prepare 3D data
+            plot_data = {'x': [], 'y': [], 'z': [], 'performance': [], 'param_names': param_names}
+            
+            for i, param_x in enumerate([param_names[0]]):
+                param_x_data = dataset_data[dataset_data['parameter_type'] == param_x]
+                for _, row_x in param_x_data.iterrows():
+                    for j, param_y in enumerate([param_names[1]]):
+                        param_y_data = dataset_data[dataset_data['parameter_type'] == param_y]
+                        for _, row_y in param_y_data.iterrows():
+                            for k, param_z in enumerate([param_names[2]]):
+                                param_z_data = dataset_data[dataset_data['parameter_type'] == param_z]
+                                for _, row_z in param_z_data.iterrows():
+                                    plot_data['x'].append(row_x['parameter_value'])
+                                    plot_data['y'].append(row_y['parameter_value'])
+                                    plot_data['z'].append(row_z['parameter_value'])
+                                    # Average performance for this combination
+                                    avg_perf = np.mean([row_x['performance_score'], 
+                                                       row_y['performance_score'], 
+                                                       row_z['performance_score']])
+                                    plot_data['performance'].append(avg_perf)
+            
+            if len(plot_data['x']) > 0:
+                fig = go.Figure(data=go.Scatter3d(
+                    x=plot_data['x'],
+                    y=plot_data['y'],
+                    z=plot_data['z'],
+                    mode='markers',
+                    marker=dict(
+                        size=8,
+                        color=plot_data['performance'],
+                        colorscale='viridis',
+                        showscale=True,
+                        colorbar=dict(title="Performance Score")
+                    ),
+                    text=[f'Performance: {p:.3f}' for p in plot_data['performance']],
+                    hovertemplate='<b>%{text}</b><br>' +
+                                 f'{param_names[0]}: %{{x}}<br>' +
+                                 f'{param_names[1]}: %{{y}}<br>' +
+                                 f'{param_names[2]}: %{{z}}<extra></extra>'
+                ))
+                
+                fig.update_layout(
+                    title=f'3D Parameter Space - {dataset}',
+                    scene=dict(
+                        xaxis_title=param_names[0].replace('_', ' ').title(),
+                        yaxis_title=param_names[1].replace('_', ' ').title(),
+                        zaxis_title=param_names[2].replace('_', ' ').title()
+                    ),
+                    height=700,
+                    width=900
+                )
+                
+                fig.show()
+    
+    def _create_distribution_plots(self):
+        """Create distribution and trend analysis plots"""
+        print("Creating distribution and trend visualizations...")
+        
+        for dataset in self.combined_df['dataset'].unique():
+            dataset_data = self.combined_df[self.combined_df['dataset'] == dataset]
+            
+            # Create subplots for each parameter
+            n_params = len(self.numeric_params)
+            if n_params == 0:
+                continue
+            
+            cols = min(3, n_params)
+            rows = (n_params + cols - 1) // cols
+            
+            fig, axes = plt.subplots(rows, cols, figsize=(15, 5*rows))
+            if rows == 1:
+                axes = axes.reshape(1, -1) if n_params > 1 else [axes]
+            
+            param_idx = 0
+            for i in range(rows):
+                for j in range(cols):
+                    if param_idx >= len(self.numeric_params):
+                        axes[i, j].axis('off')
+                        continue
+                    
+                    param = self.numeric_params[param_idx]
+                    param_data = dataset_data[dataset_data['parameter_type'] == param]
+                    
+                    if not param_data.empty:
+                        ax = axes[i, j] if rows > 1 else axes[j]
+                        
+                        # Create violin plot with scatter overlay
+                        parts = ax.violinplot([param_data['performance_score']], 
+                                            positions=[1], widths=0.8, showmeans=True)
+                        
+                        # Color the violin plot
+                        for pc in parts['bodies']:
+                            pc.set_facecolor('lightblue')
+                            pc.set_alpha(0.7)
+                        
+                        # Scatter plot overlay
+                        scatter = ax.scatter(np.ones(len(param_data)) + np.random.normal(0, 0.05, len(param_data)),
+                                           param_data['performance_score'],
+                                           c=param_data['parameter_value'],
+                                           cmap='viridis',
+                                           alpha=0.7,
+                                           s=50)
+                        
+                        # Add trend line
+                        if len(param_data) > 2:
+                            z = np.polyfit(param_data['parameter_value'], param_data['performance_score'], 1)
+                            p = np.poly1d(z)
+                            param_range = np.linspace(param_data['parameter_value'].min(), 
+                                                    param_data['parameter_value'].max(), 100)
+                            
+                            # Normalize trend line to violin plot scale
+                            trend_normalized = (p(param_range) - param_data['performance_score'].min()) / \
+                                             (param_data['performance_score'].max() - param_data['performance_score'].min())
+                            trend_normalized = trend_normalized * 0.3 + 0.7  # Scale to violin plot width
+                            
+                            ax2 = ax.twinx()
+                            ax2.plot(trend_normalized, param_range, 'r-', linewidth=2, alpha=0.8)
+                            ax2.set_ylabel(f'{param.replace("_", " ").title()} Value', color='red')
+                            ax2.tick_params(axis='y', labelcolor='red')
+                        
+                        ax.set_title(f'{param.replace("_", " ").title()}\nDistribution & Performance')
+                        ax.set_xlabel('Distribution')
+                        ax.set_ylabel('Performance Score')
+                        ax.set_xlim(0.5, 1.5)
+                        
+                        # Add colorbar for scatter
+                        plt.colorbar(scatter, ax=ax, label='Parameter Value', shrink=0.6)
+                    
+                    param_idx += 1
+            
+            plt.suptitle(f'Parameter Distributions and Trends - {dataset}', 
+                        fontsize=16, fontweight='bold')
+            plt.tight_layout()
+            plt.show()
+    
+    def _create_correlation_wheels(self):
+        """Create circular correlation wheel visualizations"""
+        print("Creating correlation wheel visualizations...")
+        
+        for dataset in self.combined_df['dataset'].unique():
+            dataset_data = self.combined_df[self.combined_df['dataset'] == dataset]
+            
+            # Calculate correlations with performance
+            correlations = {}
+            for param in self.numeric_params:
+                param_data = dataset_data[dataset_data['parameter_type'] == param]
+                if len(param_data) >= 3:
+                    corr = param_data['parameter_value'].corr(param_data['performance_score'])
+                    if not np.isnan(corr):
+                        correlations[param] = corr
+            
+            if len(correlations) < 3:
+                continue
+            
+            # Create circular plot
+            fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(projection='polar'))
+            
+            # Calculate angles for parameters
+            params = list(correlations.keys())
+            angles = np.linspace(0, 2 * np.pi, len(params), endpoint=False)
+            values = [correlations[param] for param in params]
+            
+            # Create the wheel
+            bars = ax.bar(angles, np.abs(values), width=2*np.pi/len(params)*0.8, 
+                         bottom=0.0, alpha=0.7)
+            
+            # Color bars based on correlation sign and strength
+            for bar, value in zip(bars, values):
+                if value > 0:
+                    bar.set_color(plt.cm.RdYlBu_r(0.8))  # Red for positive
+                else:
+                    bar.set_color(plt.cm.RdYlBu_r(0.2))  # Blue for negative
+                bar.set_alpha(min(1.0, abs(value) * 2))  # Alpha based on strength
+            
+            # Add parameter labels
+            ax.set_xticks(angles)
+            ax.set_xticklabels([param.replace('_', '\n').title() for param in params])
+            
+            # Add correlation values as text
+            for angle, value, param in zip(angles, values, params):
+                ax.text(angle, abs(value) + 0.1, f'{value:.2f}', 
+                       ha='center', va='center', fontweight='bold')
+            
+            # Customize the plot
+            ax.set_ylim(0, 1.2)
+            ax.set_title(f'Parameter-Performance Correlation Wheel\n{dataset}', 
+                        fontsize=16, fontweight='bold', pad=20)
+            ax.grid(True, alpha=0.3)
+            
+            # Add legend
+            from matplotlib.patches import Patch
+            legend_elements = [Patch(facecolor=plt.cm.RdYlBu_r(0.8), label='Positive Correlation'),
+                             Patch(facecolor=plt.cm.RdYlBu_r(0.2), label='Negative Correlation')]
+            ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.3, 1.0))
+            
+            plt.tight_layout()
+            plt.show()
     
     def parameter_interaction_analysis(self):
         """
@@ -548,8 +891,8 @@ class ARCNETParameterAnalyzer:
         self.parameter_interaction_analysis()
         recommendations = self.generate_optimization_recommendations()
         
-        # Create visualizations
-        self.create_advanced_heatmaps()
+        # Create visualizations (new advanced visualizations instead of heatmaps)
+        self.create_advanced_visualizations()
         
         # Generate summary statistics
         print("\n" + "="*80)
@@ -637,3 +980,11 @@ if __name__ == "__main__":
     print("1. With results dictionary: analyzer = ARCNETParameterAnalyzer(results_dict=your_results)")
     print("2. With CSV files: analyzer = ARCNETParameterAnalyzer(results_dir='path/to/results', timestamp='20250722_154910')")
     print("3. Generate report: analysis = analyzer.create_comprehensive_report()")
+    print("\nNew visualization methods include:")
+    print("- Correlation Networks: Show parameter relationships as connected graphs")
+    print("- Parallel Coordinates: Multi-dimensional parameter space exploration")
+    print("- 3D Parameter Space: Interactive 3D visualization of parameter interactions")
+    print("- Radar Charts: Parameter profiles and optimal configurations")
+    print("- Distribution Plots: Parameter distributions with performance trends")
+    print("- Correlation Wheels: Circular correlation displays")
+    print("- Interactive Scatter Matrices: Pairwise parameter relationships")
