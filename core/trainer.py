@@ -574,25 +574,26 @@ def Trainer(
     final_assembly_stats = assembly_registry.get_assembly_statistics()
     complexity_history = assembly_registry.get_assembly_complexity_history()
     
-    print(f"\n=== FINAL ASSEMBLY STATISTICS ===")
-    print(f"Total components tracked: {final_assembly_stats['total_components']}")
-    print(f"Reused components: {final_assembly_stats['reused_components']}")
-    print(f"Average reuse rate: {final_assembly_stats['average_reuse']:.3f}")
-    print(f"Component types: {dict(final_assembly_stats['component_types'])}")
-    print(f"Total assembly events: {len(assembly_registry.global_assembly_events)}")
-    
-    # Report theorem compliance
-    fitness_values = [m.fitness for m in population]
-    avg_fitness = sum(fitness_values) / len(fitness_values)
-    assembly_complexity = compute_system_assembly_complexity(population)
-    
-    print(f"\n=== THEOREM COMPLIANCE ===")
-    print(f"Fitness: {avg_fitness:.3f} ∈ [0,1] check.")
-    print(f"Assembly complexity: {assembly_complexity:.3f}")
-    print(f"Q-learning active: {sum(1 for m in population if m.q_function is not None)}/{len(population)}")
-    print(f"Bias elimination: {len(bias_report['biased_modules'])} biased modules")
-    
-    print(f"Evolution complete. Total Q-experiences preserved: {sum(len(m.q_function.replay_buffer) if m.q_function else 0 for m in population)}")
+    if debug:
+        print(f"\n=== FINAL ASSEMBLY STATISTICS ===")
+        print(f"Total components tracked: {final_assembly_stats['total_components']}")
+        print(f"Reused components: {final_assembly_stats['reused_components']}")
+        print(f"Average reuse rate: {final_assembly_stats['average_reuse']:.3f}")
+        print(f"Component types: {dict(final_assembly_stats['component_types'])}")
+        print(f"Total assembly events: {len(assembly_registry.global_assembly_events)}")
+        
+        # Report theorem compliance
+        fitness_values = [m.fitness for m in population]
+        avg_fitness = sum(fitness_values) / len(fitness_values)
+        assembly_complexity = compute_system_assembly_complexity(population)
+        
+        print(f"\n=== THEOREM COMPLIANCE ===")
+        print(f"Fitness: {avg_fitness:.3f} ∈ [0,1] check.")
+        print(f"Assembly complexity: {assembly_complexity:.3f}")
+        print(f"Q-learning active: {sum(1 for m in population if m.q_function is not None)}/{len(population)}")
+        print(f"Bias elimination: {len(bias_report['biased_modules'])} biased modules")
+        
+        print(f"Evolution complete. Total Q-experiences preserved: {sum(len(m.q_function.replay_buffer) if m.q_function else 0 for m in population)}")
     
     if enable_model_save:
         export_files, metadata = export_best_models(
