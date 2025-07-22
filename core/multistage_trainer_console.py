@@ -248,7 +248,7 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                     enable_bias_elimination=False,
                     enable_lineage_snap=False,
                     experiment_name=f"arcnet_{dataset_name}_{param_type}_{value}",
-                    track_best_models=False,
+                    track_best_models=True,
                     top_k_per_generation=3,
                     debug=False
                 )
