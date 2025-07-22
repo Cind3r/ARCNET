@@ -1,0 +1,117 @@
+{
+  "timestamp": "20250722_175128",
+  "datasets_tested": [
+    "breast_cancer",
+    "iris",
+    "wine"
+  ],
+  "parameters_tested": [
+    "hidden_dim",
+    "initial_population",
+    "steps",
+    "epochs",
+    "lineage_prune_rate",
+    "lineage_kept",
+    "num_survivors",
+    "q_learning_method",
+    "enable_irxn"
+  ],
+  "total_experiments": 138,
+  "best_configurations": {
+    "hidden_dim": {
+      "dataset": "iris",
+      "parameter_value": 256,
+      "test_accuracy": 0.800000011920929,
+      "test_f1": 0.7714285714285715,
+      "test_precision": 0.8705882352941177,
+      "test_recall": 0.8,
+      "best_model_fitness": 0.665755591519025
+    },
+    "initial_population": {
+      "dataset": "iris",
+      "parameter_value": 50,
+      "test_accuracy": 0.699999988079071,
+      "test_f1": 0.5935483870967742,
+      "test_precision": 0.535,
+      "test_recall": 0.7,
+      "best_model_fitness": 0.5000917781940138
+    },
+    "steps": {
+      "dataset": "iris",
+      "parameter_value": 75,
+      "test_accuracy": 0.9666666388511658,
+      "test_f1": 0.9664109121909632,
+      "test_precision": 0.9694444444444444,
+      "test_recall": 0.9666666666666667,
+      "best_model_fitness": 0.7186962896352024
+    },
+    "epochs": {
+      "dataset": "iris",
+      "parameter_value": 20,
+      "test_accuracy": 0.800000011920929,
+      "test_f1": 0.7714285714285715,
+      "test_precision": 0.8705882352941177,
+      "test_recall": 0.8,
+      "best_model_fitness": 0.5704202375980331
+    },
+    "lineage_prune_rate": {
+      "dataset": "breast_cancer",
+      "parameter_value": 2500,
+      "test_accuracy": 0.7631579041481018,
+      "test_f1": 0.7278845494037973,
+      "test_precision": 0.8284103114930182,
+      "test_recall": 0.7631578947368421,
+      "best_model_fitness": 0.19576019928194724
+    },
+    "lineage_kept": {
+      "dataset": "iris",
+      "parameter_value": 2000,
+      "test_accuracy": 1.0,
+      "test_f1": 1.0,
+      "test_precision": 1.0,
+      "test_recall": 1.0,
+      "best_model_fitness": 0.4961570136777522
+    },
+    "num_survivors": {
+      "dataset": "breast_cancer",
+      "parameter_value": 20,
+      "test_accuracy": 0.6228070259094238,
+      "test_f1": 0.4780464675201518,
+      "test_precision": 0.38788858110187757,
+      "test_recall": 0.6228070175438597,
+      "best_model_fitness": 0.45872654426059467
+    },
+    "q_learning_method": {
+      "dataset": "iris",
+      "parameter_value": "neural",
+      "test_accuracy": 0.699999988079071,
+      "test_f1": 0.5863492063492063,
+      "test_precision": 0.5153110047846889,
+      "test_recall": 0.7,
+      "best_model_fitness": 0.4894486475876826
+    },
+    "enable_irxn": {
+      "dataset": "breast_cancer",
+      "parameter_value": true,
+      "test_accuracy": 0.7894737124443054,
+      "test_f1": 0.7760730941277244,
+      "test_precision": 0.8009455311330689,
+      "test_recall": 0.7894736842105263,
+      "best_model_fitness": 0.09906753828444277
+    }
+  },
+  "overall_performance": {
+    "mean_test_accuracy": 0.5105390321409357,
+    "std_test_accuracy": 0.1752203796981033,
+    "max_test_accuracy": 1.0,
+    "min_test_accuracy": 0.1111111119389534,
+    "mean_test_f1": 0.3989595907749023,
+    "std_test_f1": 0.20217642868623073,
+    "max_test_f1": 1.0,
+    "mean_test_precision": 0.3938127591110545,
+    "mean_test_recall": 0.5105390287312483,
+    "mean_fitness": 0.4058202638649947,
+    "max_fitness": 0.8039623519777048
+  },
+  "advanced_analysis_enabled": false
+}

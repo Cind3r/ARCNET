@@ -64,12 +64,12 @@ def load_mnist_data(normalize=True, subset_size=None):
         x_test = x_test[:subset_size//5]
         y_test = y_test[:subset_size//5]
     
-    y_train = to_categorical(y_train)
-    y_test = to_categorical(y_test)
+    # y_train = to_categorical(y_train)
+    # y_test = to_categorical(y_test)
     
-    if normalize:
-        x_train = x_train.astype('float32') / 255.
-        x_test = x_test.astype('float32') / 255.
+    
+    x_train = x_train.astype('float32') / 255.
+    x_test = x_test.astype('float32') / 255.
     
     x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
     x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
