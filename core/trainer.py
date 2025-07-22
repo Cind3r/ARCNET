@@ -382,17 +382,34 @@ def Trainer(
             }
             generation_stats.append(gen_stats)
 
-        # Q-Memory tracking
-        total_q_memory = sum(m.get_q_memory_usage() for m in population)
-        total_q_experiences = sum(len(m.q_function.replay_buffer) if m.q_function else 0 for m in population)
         
-        # Output step for tracking progress
-        avg_fitness = sum(m.fitness for m in population) / len(population)
-        best_fitness = max(m.fitness for m in population)
-        assembly_stats = assembly_registry.get_assembly_complexity_history()
-        current_reuse_rate = assembly_stats[-1]['reuse_rate'] if assembly_stats else 0.0
         
         if debug:
+                # Q-Memory tracking
+            q_memory_stats = []
+            for m in population:
+                if hasattr(m, 'get_q_memory_usage'):
+                    memory_usage = m.get_q_memory_usage()
+                    if isinstance(memory_usage, dict):
+                        q_memory_stats.append(memory_usage)
+                    else:
+                        # Legacy support for numeric return
+                        q_memory_stats.append({'total_memory': memory_usage})
+                else:
+                    q_memory_stats.append({'total_memory': 0})
+            
+            # Calculate aggregate Q-memory statistics
+            total_q_memory = sum(stats.get('total_memory', 0) for stats in q_memory_stats)
+            total_buffer_size = sum(stats.get('replay_buffer_size', 0) for stats in q_memory_stats)
+            total_q_experiences = sum(len(m.q_function.replay_buffer) if m.q_function else 0 for m in population)
+            avg_memory_utilization = sum(stats.get('memory_utilization', 0) for stats in q_memory_stats) / len(q_memory_stats) if q_memory_stats else 0
+            total_q_network_params = sum(stats.get('q_network_parameters', 0) for stats in q_memory_stats)
+            
+            # Output step for tracking progress
+            avg_fitness = sum(m.fitness for m in population) / len(population)
+            best_fitness = max(m.fitness for m in population)
+            assembly_stats = assembly_registry.get_assembly_complexity_history()
+            current_reuse_rate = assembly_stats[-1]['reuse_rate'] if assembly_stats else 0.0
             print(f"Step {step}: Avg={avg_fitness:.3f}, Best={best_fitness:.3f}, Q-Mem={total_q_memory:.1f}MB, Q-Exp={total_q_experiences}, Reuse={current_reuse_rate:.2f}")
 
         # ================ 5. Q-LEARNING GUIDED SURVIVAL SELECTION ================
