@@ -13,6 +13,13 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import networkx as nx
 from matplotlib.patches import Circle
+import shap
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score
+from sklearn.preprocessing import OneHotEncoder
+from scipy.stats import f_oneway, zscore
+import streamlit as st
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -249,6 +256,102 @@ class ARCNETParameterAnalyzer:
         
         return sensitivity_results
     
+    def detect_outliers(self, z_thresh=3):
+        """Remove outliers from performance_score using z-score."""
+        if self.combined_df is None:
+            return
+        z_scores = zscore(self.combined_df['performance_score'])
+        mask = np.abs(z_scores) < z_thresh
+        self.combined_df = self.combined_df[mask]
+        print(f"Outliers removed: {np.sum(~mask)}")
+
+    def pairwise_heatmap(self, dataset):
+        """Show pairwise heatmap for two parameters."""
+        df = self.combined_df[self.combined_df['dataset'] == dataset]
+        for p1 in self.numeric_params:
+            for p2 in self.numeric_params:
+                if p1 != p2:
+                    pivot = df.pivot_table(index='parameter_value', columns='parameter_type', values='performance_score')
+                    if p1 in pivot.index and p2 in pivot.columns:
+                        plt.figure(figsize=(8,6))
+                        sns.heatmap(pivot, annot=True, cmap='viridis')
+                        plt.title(f"{p1} vs {p2} Heatmap - {dataset}")
+                        plt.savefig(f"{dataset}_{p1}_vs_{p2}_heatmap.png")
+                        plt.show()
+
+    def multivariate_regression(self):
+        """Fit RandomForestRegressor and show feature importances and SHAP values."""
+        df = self.combined_df.copy()
+        # Prepare X, y
+        X = pd.get_dummies(df[self.numeric_params + self.categorical_params])
+        y = df['performance_score']
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+        print(f"Random Forest R2: {r2_score(y_test, model.predict(X_test)):.3f}")
+        # Feature importances
+        importances = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False)
+        print("Feature importances:\n", importances)
+        # SHAP
+        explainer = shap.Explainer(model, X_train)
+        shap_values = explainer(X_test)
+        shap.summary_plot(shap_values, X_test, show=False)
+        plt.savefig("shap_summary.png")
+        plt.show()
+
+    def anova_test(self):
+        """Run ANOVA for each parameter."""
+        for param in self.numeric_params:
+            groups = [group['performance_score'].values for _, group in self.combined_df.groupby('parameter_value')]
+            if len(groups) > 1:
+                stat, p = f_oneway(*groups)
+                print(f"ANOVA for {param}: F={stat:.3f}, p={p:.3g}")
+
+    def permutation_test(self, param, n_permutations=1000):
+        """Permutation test for parameter effect."""
+        df = self.combined_df[self.combined_df['parameter_type'] == param]
+        observed = df['performance_score'].corr(df['parameter_value'])
+        permuted = []
+        for _ in range(n_permutations):
+            permuted.append(df['performance_score'].corr(np.random.permutation(df['parameter_value'])))
+        p_value = np.mean(np.abs(permuted) >= np.abs(observed))
+        print(f"Permutation test for {param}: observed={observed:.3f}, p={p_value:.3g}")
+
+    def bayesian_optimization_stub(self):
+        """Stub for Bayesian optimization (suggests next config)."""
+        print("Bayesian optimization not implemented. Use optuna/skopt for full support.")
+        # Example: suggest random config
+        suggestion = {p: np.random.choice(self.combined_df[self.combined_df['parameter_type']==p]['parameter_value'].unique()) for p in self.numeric_params}
+        print("Suggested next config:", suggestion)
+
+    def export_all_plots(self, outdir="arcnet_analysis_plots"):
+        """Export all plots to files."""
+        import os
+        os.makedirs(outdir, exist_ok=True)
+        # Example: save all figures in matplotlib
+        for i in plt.get_fignums():
+            plt.figure(i)
+            plt.savefig(f"{outdir}/figure_{i}.png")
+
+    def summary_table(self):
+        """Print summary table of best configs."""
+        summary = self.combined_df.groupby(['dataset', 'parameter_type'])['performance_score'].max().unstack()
+        print("Summary Table (max performance per parameter):")
+        print(summary)
+        summary.to_csv("arcnet_parameter_summary.csv")
+
+    def dashboard(self):
+        """Streamlit dashboard stub."""
+        st.title("ARCNET Parameter Analysis Dashboard")
+        st.write("Summary Table")
+        st.dataframe(self.combined_df)
+        st.write("Feature Importances")
+        self.multivariate_regression()
+        st.write("Pairwise Heatmaps")
+        for dataset in self.combined_df['dataset'].unique():
+            self.pairwise_heatmap(dataset)
+
+
     def create_advanced_visualizations(self):
         """
         Create comprehensive visualization suite (replacement for heatmaps)
@@ -886,13 +989,19 @@ class ARCNETParameterAnalyzer:
             return
         
         # Run all analyses
+        #self.detect_outliers()
+        self.anova_test()
+        self.multivariate_regression()
+        self.summary_table()
+        self.export_all_plots()
+        self.bayesian_optimization_stub()
         correlations = self.correlation_analysis()
         sensitivity = self.parameter_sensitivity_analysis()
         self.parameter_interaction_analysis()
         recommendations = self.generate_optimization_recommendations()
         
         # Create visualizations (new advanced visualizations instead of heatmaps)
-        self.create_advanced_visualizations()
+        # self.create_advanced_visualizations()
         
         # Generate summary statistics
         print("\n" + "="*80)
@@ -969,22 +1078,22 @@ def analyze_arcnet_results(results_dict=None, results_dir=None, timestamp=None):
     analyzer = ARCNETParameterAnalyzer(results_dict, results_dir, timestamp)
     return analyzer.create_comprehensive_report()
 
-# Example usage:
-if __name__ == "__main__":
-    # Example of how to use with your existing results
-    # analyzer = ARCNETParameterAnalyzer(results_dict=all_results)
-    # comprehensive_analysis = analyzer.create_comprehensive_report()
+# # Example usage:
+# if __name__ == "__main__":
+#     # Example of how to use with your existing results
+#     # analyzer = ARCNETParameterAnalyzer(results_dict=all_results)
+#     # comprehensive_analysis = analyzer.create_comprehensive_report()
     
-    print("Advanced ARCNET Parameter Analyzer ready for use!")
-    print("\nUsage:")
-    print("1. With results dictionary: analyzer = ARCNETParameterAnalyzer(results_dict=your_results)")
-    print("2. With CSV files: analyzer = ARCNETParameterAnalyzer(results_dir='path/to/results', timestamp='20250722_154910')")
-    print("3. Generate report: analysis = analyzer.create_comprehensive_report()")
-    print("\nNew visualization methods include:")
-    print("- Correlation Networks: Show parameter relationships as connected graphs")
-    print("- Parallel Coordinates: Multi-dimensional parameter space exploration")
-    print("- 3D Parameter Space: Interactive 3D visualization of parameter interactions")
-    print("- Radar Charts: Parameter profiles and optimal configurations")
-    print("- Distribution Plots: Parameter distributions with performance trends")
-    print("- Correlation Wheels: Circular correlation displays")
-    print("- Interactive Scatter Matrices: Pairwise parameter relationships")
+#     print("Advanced ARCNET Parameter Analyzer ready for use!")
+#     print("\nUsage:")
+#     print("1. With results dictionary: analyzer = ARCNETParameterAnalyzer(results_dict=your_results)")
+#     print("2. With CSV files: analyzer = ARCNETParameterAnalyzer(results_dir='path/to/results', timestamp='20250722_154910')")
+#     print("3. Generate report: analysis = analyzer.create_comprehensive_report()")
+#     print("\nNew visualization methods include:")
+#     print("- Correlation Networks: Show parameter relationships as connected graphs")
+#     print("- Parallel Coordinates: Multi-dimensional parameter space exploration")
+#     print("- 3D Parameter Space: Interactive 3D visualization of parameter interactions")
+#     print("- Radar Charts: Parameter profiles and optimal configurations")
+#     print("- Distribution Plots: Parameter distributions with performance trends")
+#     print("- Correlation Wheels: Circular correlation displays")
+#     print("- Interactive Scatter Matrices: Pairwise parameter relationships")
