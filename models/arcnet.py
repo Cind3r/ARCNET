@@ -695,6 +695,79 @@ class ConceptModule(nn.Module):
     # ================ Enhanced Methods ========================
     # ==========================================================
 
+    def geodesic_interpolate(self, target_pos, alpha=0.5):
+        """Interpolate along geodesic path"""
+        if self.local_tangent_space is None:
+            # Fallback to linear interpolation
+            return alpha * self.position.data + (1 - alpha) * target_pos
+        
+        # Simple geodesic approximation
+        diff = target_pos - self.position.data
+        tangent_proj = torch.matmul(diff, self.local_tangent_space)
+        
+        # Exponential map approximation
+        geodesic_step = alpha * tangent_proj
+        new_pos = self.position.data + torch.matmul(geodesic_step, self.local_tangent_space.T)
+        return new_pos.clamp(0, 1)
+
+    def manifold_distance(self, other_pos):
+        # Always compute Euclidean as baseline
+        euclidean_dist = torch.norm(self.position.data - other_pos).item()
+        
+        if self.local_tangent_space is None:
+            return euclidean_dist
+        
+        try:
+            # Project to tangent space
+            diff = other_pos - self.position.data
+            tangent_proj = torch.matmul(diff, self.local_tangent_space)
+            
+            # Add curvature correction (theorem formula)
+            tangent_norm = torch.norm(tangent_proj)
+            curvature_factor = 1.0 + 0.1 * abs(self.curvature) * tangent_norm
+            geodesic_dist = (tangent_norm * curvature_factor).item()
+            
+            # Sanity check: geodesic shouldn't be wildly different from Euclidean
+            if geodesic_dist > 3 * euclidean_dist:
+                print(f"Warning: Geodesic distance {geodesic_dist:.4f} is unusually high compared to Euclidean {euclidean_dist:.4f}. Using Euclidean instead.")
+                return euclidean_dist
+            return geodesic_dist
+        except Exception:
+            return euclidean_dist
+
+    def update_local_geometry(self, neighbors):
+        """Estimate local tangent space and curvature"""
+        if len(neighbors) < 3:
+            self.local_tangent_space = None
+            self.curvature = 0.0
+            return
+        
+        try:
+            positions = torch.stack([n.position.data for n in neighbors])
+            centered = positions - positions.mean(dim=0)
+            
+            # ROBUST SVD with regularization
+            U, S, V = torch.svd(centered + 1e-6 * torch.eye(centered.shape[1]))
+            
+            # Only use SVD result if singular values are well-conditioned
+            if len(S) >= 2 and S[1] / S[0] > 0.1:  # Condition number check
+                self.local_tangent_space = V[:, :2]
+                # Estimate curvature
+                self.curvature = self.curvature_predictor(self.position.data).item()
+
+            else:
+                # Fallback: use PCA on positions directly
+                positions_np = positions.detach().cpu().numpy()
+                pca = PCA(n_components=2)
+                pca.fit(positions_np)
+                self.local_tangent_space = torch.tensor(pca.components_.T, dtype=torch.float32)
+                self.curvature = 0.1  # Small default curvature
+
+        except Exception:
+            # Final fallback: no local geometry
+            self.local_tangent_space = None
+            self.curvature = 0.0
+
     def update_manifold_position(self, x):
         if not self.position_initialized:
             with torch.no_grad():
@@ -731,6 +804,74 @@ class ConceptModule(nn.Module):
 
         out = self.fc3(h2)
         return out
+
+
+    def forward_summary(self):
+        """ENHANCED forward summary with Q-learning, molecular assembly, AND reward data"""
+        base_summary = (self.last_hidden.mean(dim=0) if self.last_hidden is not None 
+                       else torch.zeros(self.hidden_dim))
+        
+        # CREATE COMPREHENSIVE MESSAGE WITH MOLECULAR DATA
+        if (self.q_learning_method == 'neural' and 
+            self.q_function is not None):
+            
+            class ComprehensiveMessage:
+                def __init__(self, summary, q_experiences, reward_history, fitness, 
+                           manifold_position, assembly_index, molecular_summary):
+                    self.data = summary
+                    self.content = summary  # For backward compatibility
+                    self.q_experiences = q_experiences
+                    self.reward_history = reward_history
+                    self.fitness = fitness
+                    self.manifold_position = manifold_position
+                    self.assembly_index = assembly_index
+                    self.molecular_summary = molecular_summary
+                    
+                def __mul__(self, other):
+                    return ComprehensiveMessage(
+                        self.data * other, 
+                        self.q_experiences, 
+                        self.reward_history,
+                        self.fitness,
+                        self.manifold_position,
+                        self.assembly_index,
+                        self.molecular_summary
+                    )
+                
+                @property
+                def shape(self):
+                    return self.data.shape
+                
+                def expand_as(self, other):
+                    return ComprehensiveMessage(
+                        self.data.expand_as(other), 
+                        self.q_experiences,
+                        self.reward_history,
+                        self.fitness,
+                        self.manifold_position,
+                        self.assembly_index,
+                        self.molecular_summary
+                    )
+            
+            # Collect comprehensive data for message
+            recent_q_exp = (self.q_function.replay_buffer[-5:] 
+                          if len(self.q_function.replay_buffer) >= 5 
+                          else self.q_function.replay_buffer)
+            
+            reward_hist = getattr(self, 'reward_history', [self.reward])
+            molecular_summary = self.get_molecular_assembly_summary()
+            
+            return ComprehensiveMessage(
+                base_summary, 
+                recent_q_exp, 
+                reward_hist,
+                self.fitness,
+                self.position.data.detach().cpu().numpy().tolist(),
+                self.assembly_index,
+                molecular_summary
+            )
+        
+        return base_summary
 
     def receive_message(self, message):
         """Enhanced message receiving with assembly tracking"""
@@ -935,6 +1076,59 @@ class ConceptModule(nn.Module):
             print(f"Warning: Could not track molecular evolution: {e}")
 
         return new_mod
+
+    def _calculate_complexity_reward(self, assembly_complexity: float): # -> float:
+        """Calculate reward based on assembly complexity (can be positive or negative)"""
+        # Reward moderate complexity, penalize excessive complexity
+        optimal_complexity = 5.0
+        if assembly_complexity <= optimal_complexity:
+            return assembly_complexity / optimal_complexity  # 0 to 1
+        else:
+            # Penalize excessive complexity
+            excess = assembly_complexity - optimal_complexity
+            return max(0.1, 1.0 - (excess * 0.1))  # Decrease reward for high complexity
+
+    def compute_assembly_gradient_modifier(self, lattice: MolecularLattice, original_grad: torch.Tensor):# -> torch.Tensor:
+        """Modify gradients based on molecular assembly complexity"""
+        modifier = torch.ones_like(original_grad)
+        
+        # Get assembly properties
+        assembly_index = self.calculate_assembly_index(lattice)
+        
+        # Convert lattice back to tensor positions
+        for i, molecule_row in enumerate(lattice.molecules):
+            for j, molecule in enumerate(molecule_row):
+                # Calculate position in original tensor
+                start_row = i * self.molecule_size
+                end_row = start_row + self.molecule_size
+                start_col = j * self.molecule_size
+                end_col = start_col + self.molecule_size
+                
+                # Assembly-based modification
+                if len(self.molecule_reuse[molecule]) > 1:
+                    # Reduce updates for reused molecules (preserve learned patterns)
+                    modifier[start_row:end_row, start_col:end_col] *= 0.5
+                elif molecule.atomic_symbol.startswith('Ze'):
+                    # Encourage sparsity for zero-like weights
+                    modifier[start_row:end_row, start_col:end_col] *= 1.2
+                elif assembly_index > 5:
+                    # Reduce learning rate for complex assemblies
+                    modifier[start_row:end_row, start_col:end_col] *= 0.8
+        
+        return modifier
+
+    def get_molecular_assembly_summary(self):# -> Dict:
+        """Get comprehensive summary of molecular assembly state"""
+        return {
+            'total_molecules': len(self.atomic_library),
+            'total_lattices': len(self.lattice_library),
+            'assembly_pathways': len(self.assembly_pathways),
+            'molecular_reuse_count': len([mol for mol, lattices in self.molecule_reuse.items() if len(lattices) > 1]),
+            'average_assembly_complexity': np.mean(list(self.assembly_indices.values())) if self.assembly_indices else 0,
+            'evolution_stats': self.molecular_evolution_stats
+        }
+
+
 
     # ==========================================================
     # ================ Analysis Methods ========================
