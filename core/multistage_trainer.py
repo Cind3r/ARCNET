@@ -204,7 +204,7 @@ def MultiStageTrain(dataset_names, default_params=None,
     
     enable_random_params = enable_random_params
     # Enhanced parameter sweep function with better error handling
-    
+
     def run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
                        param_type='hidden_dim', max_tests=6, enable_random_params=enable_random_params):
         """Enhanced parameter sweep with better statistics collection and optional random parameter assignment"""
@@ -399,7 +399,7 @@ def MultiStageTrain(dataset_names, default_params=None,
             tqdm.write(f"{param_display} ANALYSIS")
             tqdm.write(f"{'-'*40}")
             
-            max_tests = 2 if param_name in ['q_learning_method', 'training_method', 'enable_irxn'] else 3
+            max_tests = 2 if param_name in ['q_learning_method', 'training_method', 'enable_irxn'] else max_tests
             param_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
                                               param_name, max_tests=max_tests)
             all_results[param_name].extend(param_results)
