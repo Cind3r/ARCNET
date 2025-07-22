@@ -486,8 +486,8 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
         tqdm.write("8. Q-LEARNING METHOD ANALYSIS")
         tqdm.write(f"{'-'*40}")
         q_learning_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test,
-                                                  'q_learning', max_tests=2)
-        all_results['q_learning'].extend(q_learning_results)
+                                                  'q_learning_method', max_tests=2)
+        all_results['q_learning_method'].extend(q_learning_results)
 
         # Test 9: Training Method Analysis
         tqdm.write(f"\n{'-'*40}")
