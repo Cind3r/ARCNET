@@ -398,8 +398,8 @@ def MultiStageTrain(dataset_names, default_params=None,
             tqdm.write(f"\n{'-'*40}")
             tqdm.write(f"{param_display} ANALYSIS")
             tqdm.write(f"{'-'*40}")
-            max_val = max_tests
-            max_tests = 2 if param_name in ['q_learning_method', 'training_method', 'enable_irxn'] else max_val
+            
+            max_tests = 2 if param_name in ['q_learning_method', 'training_method', 'enable_irxn'] else 6
             param_results = run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
                                               param_name, max_tests=max_tests)
             all_results[param_name].extend(param_results)
