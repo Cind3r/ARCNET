@@ -1,0 +1,20 @@
+{
+  "timestamp": "20250722_152159",
+  "datasets_tested": [
+    "breast_cancer"
+  ],
+  "parameters_tested": [
+    "hidden_dim",
+    "initial_population"
+  ],
+  "total_experiments": 4,
+  "experiments_per_param": {
+    "hidden_dim": 2,
+    "initial_population": 2
+  },
+  "successful_experiments": 4,
+  "failed_experiments": 0,
+  "best_configurations": {
+    "hidden_dim": {
+      "dataset": "breast_cancer",
+      "parameter_value": 

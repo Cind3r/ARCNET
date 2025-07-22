@@ -438,14 +438,14 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
         'timestamp': timestamp,
         'datasets_tested': list(datasets.keys()),
         'parameters_tested': list(all_results.keys()),
-        'total_experiments': experiment_count,
-        'experiments_per_param': {k: len(v) for k, v in all_results.items()},
-        'successful_experiments': sum(1 for results in all_results.values() for r in results if r.get('experiment_completed', False)),
-        'failed_experiments': sum(1 for results in all_results.values() for r in results if not r.get('experiment_completed', True)),
+        'total_experiments': int(experiment_count),  # Convert to int
+        'experiments_per_param': {k: int(len(v)) for k, v in all_results.items()},  # Convert to int
+        'successful_experiments': int(sum(1 for results in all_results.values() for r in results if r.get('experiment_completed', False))),
+        'failed_experiments': int(sum(1 for results in all_results.values() for r in results if not r.get('experiment_completed', True))),
         'best_configurations': {},
         'overall_performance': {}
     }
-    
+
     # Add best configurations if we have results
     for param_type, results in all_results.items():
         if results:
@@ -454,17 +454,17 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
                 df = pd.DataFrame(successful_results)
                 best_overall = df.loc[df['test_accuracy'].idxmax()]
                 summary_report['best_configurations'][param_type] = {
-                    'dataset': best_overall['dataset'],
-                    'parameter_value': best_overall['parameter_value'],
+                    'dataset': str(best_overall['dataset']),
+                    'parameter_value': convert_to_python_type(best_overall['parameter_value']),  # Convert type
                     'test_accuracy': float(best_overall['test_accuracy']),
                     'test_f1': float(best_overall['test_f1'])
-                }
+            }
 
     # Calculate overall performance statistics
     all_successful_results = []
     for results in all_results.values():
         all_successful_results.extend([r for r in results if r.get('experiment_completed', False)])
-    
+
     if all_successful_results:
         overall_df = pd.DataFrame(all_successful_results)
         summary_report['overall_performance'] = {
@@ -474,15 +474,36 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
             'mean_test_f1': float(overall_df['test_f1'].mean()),
             'std_test_f1': float(overall_df['test_f1'].std()),
             'max_test_f1': float(overall_df['test_f1'].max())
-        }
-    
-    # Save summary report
+    }
+
+# Add this helper function before saving
+    def convert_to_python_type(value):
+        """Convert numpy types to native Python types for JSON serialization"""
+        if hasattr(value, 'dtype'):
+            if 'int' in str(value.dtype):
+                return int(value)
+            elif 'float' in str(value.dtype):
+                return float(value)
+            elif 'bool' in str(value.dtype):
+                return bool(value)
+        return value
+
+# Save summary report with error handling
     import json
     summary_filename = f'experiments/multistage_results/arcnet_summary_{timestamp}.json'
-    with open(summary_filename, 'w') as f:
-        json.dump(summary_report, f, indent=2)
-    
-    print(f"✓ Summary report saved to {summary_filename}")
+    try:
+        with open(summary_filename, 'w') as f:
+            json.dump(summary_report, f, indent=2, default=convert_to_python_type)
+        print(f"✓ Summary report saved to {summary_filename}")
+    except TypeError as e:
+        print(f"✗ JSON serialization error: {e}")
+        # Save as pickle as backup
+        import pickle
+        backup_filename = f'experiments/multistage_results/arcnet_summary_{timestamp}.pkl'
+        with open(backup_filename, 'wb') as f:
+            pickle.dump(summary_report, f)
+        print(f"✓ Summary report saved as pickle to {backup_filename}")
+
     
     # Print final summary
     print(f"\n" + "="*60)
