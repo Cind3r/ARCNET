@@ -128,7 +128,7 @@ def Trainer(
             for m in population:
                 assembly_registry.register_module_initialization(m)
     else:
-        print("STARTING FRESH EVOLUTION")
+        # print("STARTING FRESH EVOLUTION")
         for _ in range(initial_population):
             m = ConceptModule(input_dim, hidden_dim, output_dim, q_learning_method=q_learning_method)
             # Initialize with consistent state

@@ -19,6 +19,14 @@ from collections import defaultdict
 import os
 from datetime import datetime
 from tqdm.notebook import tqdm
+from IPython.display import display, HTML
+display(HTML("""
+<style>
+.jp-ProgressBar .progress-bar {
+    height: 6px !important;  /* Change 6px to your desired thickness */
+}
+</style>
+"""))
 
 def load_breast_cancer_data(test_size=0.2, random_state=42, normalize=False):
     data = load_breast_cancer()
@@ -108,8 +116,6 @@ def MultiStageTrain(dataset_names, default_params=None,
     # Load datasets (same as before)
     datasets = {}
     print(f"Loading datasets: {dataset_names}")
-    
-    dataset_load_pbar = tqdm(dataset_names, desc="Loading Datasets")
     
     dataset_load_pbar = tqdm(dataset_names, desc="Loading Datasets")
     
