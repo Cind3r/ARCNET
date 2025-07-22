@@ -108,7 +108,6 @@ def MultiStageTrain(dataset_names, default_params=None,
         - default_params (dict): Default parameters for training
         - enable_advanced_analysis (bool): Whether to run advanced statistical analysis
         - save_results (bool): Whether to save results to files
-
     Returns:
         - tuple: (all_results, summary_report, timestamp, advanced_analysis)
     """
@@ -167,7 +166,7 @@ def MultiStageTrain(dataset_names, default_params=None,
     }
     
     PARAMETER_TESTS = {
-        'hidden_dim': [4, 8, 16, 32, 64, 128],
+        'hidden_dim': [16, 32, 64, 128, 256, 512],
         'initial_population': [1, 5, 10, 20, 50, 100],
         'steps': [5, 10, 15, 30, 50, 75],
         'epochs': [1, 5, 10, 15, 20, 30],
