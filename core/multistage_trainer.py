@@ -87,24 +87,54 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
     """
     datasets = {}
 
-    # Standard loading
-    # Load only datasets specified in dataset_names
-    if 'breast_cancer' in dataset_names:
-        datasets['breast_cancer'] = load_breast_cancer_data()
-    if 'breast_cancer_norm' in dataset_names:
-        datasets['breast_cancer_norm'] = load_breast_cancer_data(normalize=True)
-    if 'iris' in dataset_names:
-        datasets['iris'] = load_iris_data()
-    if 'iris_norm' in dataset_names:
-        datasets['iris_norm'] = load_iris_data(normalize=True)
-    if 'wine' in dataset_names:
-        datasets['wine'] = load_wine_data()
-    if 'wine_norm' in dataset_names:
-        datasets['wine_norm'] = load_wine_data(normalize=True)
-    if 'mnist_small' in dataset_names:
-        datasets['mnist_small'] = load_mnist_data(subset_size=10000)
-    if 'mnist_full' in dataset_names:
-        datasets['mnist_full'] = load_mnist_data()
+    print(f"Loading datasets: {dataset_names}")
+    
+    dataset_load_pbar = tqdm(dataset_names, desc="Loading Datasets")
+    
+    for dataset_name in dataset_load_pbar:
+        dataset_load_pbar.set_postfix({'loading': dataset_name})
+        
+        try:
+            if dataset_name == 'breast_cancer':
+                datasets['breast_cancer'] = load_breast_cancer_data()
+                print(f"Loaded breast_cancer: {datasets['breast_cancer'][0].shape[0]} samples")
+            elif dataset_name == 'breast_cancer_norm':
+                datasets['breast_cancer_norm'] = load_breast_cancer_data(normalize=True)
+                print(f"Loaded breast_cancer_norm: {datasets['breast_cancer_norm'][0].shape[0]} samples")
+            elif dataset_name == 'iris':
+                datasets['iris'] = load_iris_data()
+                print(f"Loaded iris: {datasets['iris'][0].shape[0]} samples")
+            elif dataset_name == 'iris_norm':
+                datasets['iris_norm'] = load_iris_data(normalize=True)
+                print(f"Loaded iris_norm: {datasets['iris_norm'][0].shape[0]} samples")
+            elif dataset_name == 'wine':
+                datasets['wine'] = load_wine_data()
+                print(f"Loaded wine: {datasets['wine'][0].shape[0]} samples")
+            elif dataset_name == 'wine_norm':
+                datasets['wine_norm'] = load_wine_data(normalize=True)
+                print(f"Loaded wine_norm: {datasets['wine_norm'][0].shape[0]} samples")
+            elif dataset_name == 'mnist_small':
+                datasets['mnist_small'] = load_mnist_data(subset_size=10000)
+                print(f"Loaded mnist_small: {datasets['mnist_small'][0].shape[0]} samples")
+            elif dataset_name == 'mnist_full':
+                datasets['mnist_full'] = load_mnist_data()
+                print(f"Loaded mnist_full: {datasets['mnist_full'][0].shape[0]} samples")
+            else:
+                print(f"Warning: Unknown dataset '{dataset_name}' - skipping")
+                
+        except Exception as e:
+            print(f"Error loading {dataset_name}: {e}")
+            continue
+    
+    dataset_load_pbar.close()
+    
+    # Validate that we have datasets to work with
+    if not datasets:
+        print("ERROR: No datasets were successfully loaded!")
+        return {}, {}, timestamp
+    
+    print(f"Successfully loaded {len(datasets)} datasets")
+    print("-" * 60)
     
     DATASET_CONFIGS = {
     'breast_cancer': {
@@ -187,12 +217,8 @@ def MultiStageTrain(dataset_names, norm=False, default_params=None):
     all_results = defaultdict(list)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    print("="*80)
-    print("ARCNET MULTISTAGE TRAINING ANALYSIS")
-    print("="*80)
 
-    # Function to run parameter sweep
-    # ...existing code...
+  
 
     # Function to run parameter sweep
     def run_parameter_sweep(dataset_name, X_train, y_train, X_test, y_test, 
